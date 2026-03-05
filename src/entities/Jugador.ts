@@ -16,9 +16,10 @@ export class Jugador extends Entidad {
      * @param y - Posición inicial Y.
      * @param simbolo - Carácter visual.
      * @param color - Color visual.
+     * @param assetKey - Identificador del asset.
      */
-    constructor(x: number, y: number, simbolo: string, color: string) {
-        super(x, y, simbolo, color);
+    constructor(x: number, y: number, simbolo: string, color: string, assetKey: string = '') {
+        super(x, y, simbolo, color, assetKey);
     }
 
     /**
@@ -51,7 +52,7 @@ export class Jugador extends Entidad {
         }
 
         const siguientePosicion = this.estrategia.siguienteMovimiento(this, tablero);
-        
+
         // Actualizamos las coordenadas internas
         this.posicion.setX(siguientePosicion.getX());
         this.posicion.setY(siguientePosicion.getY());

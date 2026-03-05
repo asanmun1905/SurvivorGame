@@ -14,8 +14,9 @@ export class Enemigo extends Jugador {
      */
     constructor(x: number, y: number) {
         // "E" en rojo para representar el peligro
-        super(x, y, "E", "#ff5555");
-        
+        const asset = Math.random() > 0.5 ? "malo" : "malo2";
+        super(x, y, "E", "#ff5555", asset);
+
         // Vitalidad aleatoria: Math.random() * 41 [0..40] + 50 => [50..90]
         const vitalidadAleatoria = Math.floor(Math.random() * 41) + 50;
         this.setVitalidad(vitalidadAleatoria);

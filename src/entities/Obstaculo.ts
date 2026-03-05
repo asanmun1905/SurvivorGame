@@ -14,8 +14,8 @@ export class Obstaculo extends Entidad {
      */
     constructor(x: number, y: number) {
         // "#" en gris para representar una roca o pared
-        super(x, y, "#", "#aaaaaa");
-        
+        super(x, y, "#", "#aaaaaa", "obstaculo");
+
         // Vitalidad fija alta para que no sea derrotado en combate (aunque la lógica de combate lo ignora)
         this.setVitalidad(100);
     }

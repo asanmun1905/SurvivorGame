@@ -14,8 +14,8 @@ export class Presa extends Jugador {
      */
     constructor(x: number, y: number) {
         // "P" en verde para representar a la presa/naturaleza
-        super(x, y, "P", "#55ff55");
-        
+        super(x, y, "P", "#55ff55", "bueno");
+
         // Vitalidad aleatoria: Math.random() * 61 [0..60] + 30 => [30..90]
         const vitalidadAleatoria = Math.floor(Math.random() * 61) + 30;
         this.setVitalidad(vitalidadAleatoria);

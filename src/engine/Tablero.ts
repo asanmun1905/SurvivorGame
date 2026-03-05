@@ -8,6 +8,8 @@ export class Tablero {
     private alto: number;
     private ctx: CanvasRenderingContext2D | null = null;
     private cellSize: number = 20;
+    private assets: Map<string, HTMLImageElement> = new Map();
+    private backgroundLoaded: boolean = false;
 
     /**
      * Inicializa un Tablero lógico.
@@ -18,6 +20,29 @@ export class Tablero {
     constructor(ancho: number, alto: number) {
         this.ancho = ancho;
         this.alto = alto;
+        this.cargarAssets();
+    }
+
+    /**
+     * Carga las imágenes necesarias para el juego.
+     */
+    private cargarAssets(): void {
+        const paths: Record<string, string> = {
+            'background': '/assets/Background/background.png',
+            'malo': '/assets/MaloMelee/NightBorne.png',
+            'malo2': '/assets/MaloRango/Necromancer_creativekind-Sheet.png',
+            'bueno': '/assets/BuenoMelee/Sprites/IDLE/idle_down.png',
+            'obstaculo': '/assets/Obstacle/82cfbcc1-c0ad-4c07-91ae-ca682d039cb1_unnamed_1_.jpg'
+        };
+
+        for (const [key, path] of Object.entries(paths)) {
+            const img = new Image();
+            img.src = path;
+            img.onload = () => {
+                if (key === 'background') this.backgroundLoaded = true;
+            };
+            this.assets.set(key, img);
+        }
     }
 
     /**
@@ -60,12 +85,18 @@ export class Tablero {
         }
 
         const canvas = this.ctx.canvas;
-        
+
         // 1. Limpiar el fondo
         this.ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // 2. Dibujar la cuadrícula decorativa
-        this.dibujarCuadricula();
+        // 2. Dibujar fondo (Imagen o Gradiente Oscuro)
+        const bgImg = this.assets.get('background');
+        if (this.backgroundLoaded && bgImg) {
+            this.ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+        } else {
+            this.ctx.fillStyle = "#0f172a";
+            this.ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
 
         // 3. Dibujar cada entidad
         for (const entidad of entidades) {
@@ -73,60 +104,42 @@ export class Tablero {
         }
     }
 
-    /**
-     * Dibuja las líneas de la cuadrícula para ayudar a la visualización.
-     */
-    private dibujarCuadricula(): void {
-        if (!this.ctx) return;
 
-        this.ctx.strokeStyle = "#1e293b"; // Color de línea suave
-        this.ctx.lineWidth = 1;
-
-        for (let x = 0; x <= this.ancho; x++) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(x * this.cellSize, 0);
-            this.ctx.lineTo(x * this.cellSize, this.alto * this.cellSize);
-            this.ctx.stroke();
-        }
-
-        for (let y = 0; y <= this.alto; y++) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(0, y * this.cellSize);
-            this.ctx.lineTo(this.ancho * this.cellSize, y * this.cellSize);
-            this.ctx.stroke();
-        }
-    }
-
-    /**
-     * Renderiza una entidad individual como un círculo coloreado con un símbolo central.
-     */
     private dibujarEntidad(entidad: Entidad): void {
         if (!this.ctx) return;
 
         const xPx = entidad.getX() * this.cellSize;
         const yPx = entidad.getY() * this.cellSize;
-        const radio = this.cellSize / 2;
+        const assetKey = entidad.getAssetKey();
+        const assetImg = this.assets.get(assetKey);
 
-        // 1. Configurar efectos visuales Premium (Bloom/Glow)
         this.ctx.save();
-        
-        // Sombra brillante para el efecto de luz emitidda
-        this.ctx.shadowBlur = 15;
-        this.ctx.shadowColor = entidad.getColor();
-        
-        // 2. Fondo de la entidad
-        this.ctx.fillStyle = entidad.getColor();
-        this.ctx.beginPath();
-        this.ctx.arc(xPx + radio, yPx + radio, radio * 0.8, 0, Math.PI * 2);
-        this.ctx.fill();
 
-        // 3. Símbolo de la entidad (con contraste)
-        this.ctx.shadowBlur = 0; // Desactivar glow para el texto
-        this.ctx.fillStyle = "white";
-        this.ctx.font = `bold ${this.cellSize * 0.7}px 'Outfit', Arial`;
-        this.ctx.textAlign = "center";
-        this.ctx.textBaseline = "middle";
-        this.ctx.fillText(entidad.getSimbolo(), xPx + radio, yPx + radio);
+        // Efecto de profundidad / sombra
+        this.ctx.shadowBlur = 10;
+        this.ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
+        this.ctx.shadowOffsetY = 2;
+
+        if (assetImg && assetImg.complete) {
+            // Dibujar Sprite
+            this.ctx.drawImage(assetImg, xPx, yPx, this.cellSize, this.cellSize);
+        } else {
+            // Fallback a dibujo vectorial original
+            const radio = this.cellSize / 2;
+            this.ctx.shadowBlur = 15;
+            this.ctx.shadowColor = entidad.getColor();
+            this.ctx.fillStyle = entidad.getColor();
+            this.ctx.beginPath();
+            this.ctx.arc(xPx + radio, yPx + radio, radio * 0.8, 0, Math.PI * 2);
+            this.ctx.fill();
+
+            this.ctx.shadowBlur = 0;
+            this.ctx.fillStyle = "white";
+            this.ctx.font = `bold ${this.cellSize * 0.7}px 'Outfit', Arial`;
+            this.ctx.textAlign = "center";
+            this.ctx.textBaseline = "middle";
+            this.ctx.fillText(entidad.getSimbolo(), xPx + radio, yPx + radio);
+        }
 
         this.ctx.restore();
     }
@@ -141,7 +154,7 @@ export class Tablero {
     public obtenerCaptura(entidades: Entidad[]): string[][] {
         // Inicializamos matriz vacía
         const captura: string[][] = Array.from(
-            { length: this.alto }, 
+            { length: this.alto },
             () => Array(this.ancho).fill("")
         );
 
@@ -152,7 +165,7 @@ export class Tablero {
             // Verificamos límites preventivamente
             if (x >= 0 && x < this.ancho && y >= 0 && y < this.alto) {
                 const nombreTipo = e.constructor.name;
-                
+
                 // Prioridad: Los obstáculos son permanentes
                 if (captura[y][x] === "" || captura[y][x] !== "Obstaculo") {
                     captura[y][x] = nombreTipo;

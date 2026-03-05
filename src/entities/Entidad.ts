@@ -7,13 +7,16 @@ import { Posicion } from '../utils/Posicion';
 export abstract class Entidad {
     /** La posición actual de la entidad en el tablero */
     protected posicion: Posicion;
-    
+
     /** El símbolo (letra o carácter) que representa a la entidad visualmente */
     protected simbolo: string;
-    
+
     /** El color (en formato CSS/Hexadecimal) que se usará para renderizar la entidad */
     protected color: string;
-    
+
+    /** El identificador del asset visual que representa a esta entidad */
+    protected assetKey: string;
+
     /** El nivel de salud o fuerza de la entidad. Se usa en la resolución de combates */
     protected vitalidad: number = 0;
 
@@ -24,11 +27,13 @@ export abstract class Entidad {
      * @param y - Posición inicial en el eje Y.
      * @param simbolo - Carácter que representa a la entidad.
      * @param color - Código de color para el renderizado.
+     * @param assetKey - Identificador del asset para el renderizado visual.
      */
-    constructor(x: number, y: number, simbolo: string, color: string) {
+    constructor(x: number, y: number, simbolo: string, color: string, assetKey: string = '') {
         this.posicion = new Posicion(x, y);
         this.simbolo = simbolo;
         this.color = color;
+        this.assetKey = assetKey;
     }
 
     /**
@@ -85,6 +90,14 @@ export abstract class Entidad {
      */
     public getColor(): string {
         return this.color;
+    }
+
+    /**
+     * Obtiene el identificador del asset de la entidad.
+     * @returns El string con la clave del asset.
+     */
+    public getAssetKey(): string {
+        return this.assetKey;
     }
 
     /**
