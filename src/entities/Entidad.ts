@@ -20,6 +20,15 @@ export abstract class Entidad {
     /** El nivel de salud o fuerza de la entidad. Se usa en la resolución de combates */
     protected vitalidad: number = 0;
 
+    /** Posición de renderizado suavizada (interpolada entre celdas) */
+    public renderX: number = 0;
+    public renderY: number = 0;
+
+    /** Velocidad de movimiento relativa (1 = normal, 2 = sprinter, 0.5 = tank) */
+    protected moveSpeed: number = 1;
+    /** Contador de turnos para entidades lentas */
+    protected turnSkipCounter: number = 0;
+
     /**
      * Inicializa una nueva instancia de una Entidad.
      * 
@@ -34,7 +43,21 @@ export abstract class Entidad {
         this.simbolo = simbolo;
         this.color = color;
         this.assetKey = assetKey;
+        this.renderX = x;
+        this.renderY = y;
     }
+
+    /** @returns Velocidad de movimiento */
+    public getMoveSpeed(): number { return this.moveSpeed; }
+
+    /** Whether this entity should skip this turn (for slow entities) */
+    public shouldSkipTurn(): boolean { return false; }
+
+    /** Visual scale multiplier for rendering */
+    public getVisualScale(): number { return 1.0; }
+
+    /** Optional color tint overlay for this entity (CSS color or null) */
+    public getTint(): string | null { return null; }
 
     /**
      * Obtiene el objeto de posición de la entidad.

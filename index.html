@@ -5,115 +5,270 @@
   <meta charset="UTF-8" />
   <link rel="icon" type="image/svg+xml" href="/vite.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Survivor Chronicles | Dark Fantasy Edition</title>
+  <title>Hopeless Despair | Dark Fantasy Edition</title>
+  <meta name="description" content="Hopeless Despair — Dark Fantasy simulation game." />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=MedievalSharp&family=Inter:wght@400;500;600;700&display=swap"
-    rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=MedievalSharp&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./src/style.css" />
 </head>
 
 <body class="theme-dark-fantasy">
-  <!-- Main Menu Screen -->
+
+  <!-- ═══════════════════════ MAIN MENU ═══════════════════════ -->
   <div id="main-menu" class="screen">
     <div class="menu-content">
-      <h1 class="game-title">Survivor <span>Chronicles</span></h1>
+      <h1 class="game-title">Hopeless <span>Despair</span></h1>
       <p class="subtitle">Dark Fantasy Edition</p>
-      <div class="menu-actions">
-        <button id="btn-start" class="menu-btn primary">Start Simulation</button>
-        <button id="btn-settings" class="menu-btn secondary">Settings</button>
+      <div class="mode-cards">
+        <div class="mode-card featured" id="btn-start">
+          <div class="mode-card-icon">🧪</div>
+          <h3>Simulación</h3>
+          <p>Coloca entidades, ajusta la velocidad y observa la batalla.</p>
+        </div>
+        <div class="mode-card" id="btn-oleadas">
+          <div class="mode-card-icon">⚔️</div>
+          <h3>Oleadas</h3>
+          <p>Controla tu personaje con WASD. Defiéndete de oleadas de bestias.</p>
+        </div>
+        <div class="mode-card danger" id="btn-bullethell">
+          <div class="mode-card-icon">💀</div>
+          <h3>Bullet Hell</h3>
+          <p>WASD / ↑↓←→ para moverte. Esquiva las balas. Sobrevive.</p>
+        </div>
       </div>
+      <button id="btn-settings" class="menu-btn-sm">⚙️ Ajustes</button>
     </div>
+    <footer style="opacity: 0.3;"><p>Hopeless Despair — Dark Fantasy Edition © 2026</p></footer>
   </div>
 
-  <!-- Settings Overlay -->
+  <!-- ═══════════════════════ SETTINGS OVERLAY ═══════════════════════ -->
   <div id="settings-overlay" class="overlay hidden">
     <div class="settings-modal">
       <header>
-        <h2>Game Settings</h2>
+        <h2>⚙️ Ajustes</h2>
         <button id="close-settings" class="close-btn">&times;</button>
       </header>
       <div class="settings-scroll">
         <section>
-          <h3>Visual Style</h3>
+          <h3>Visual</h3>
           <div class="setting-item">
-            <label>Theme</label>
-            <select id="select-theme">
-              <option value="dark-fantasy">Dark Fantasy</option>
-              <option value="modern">Modern Premium</option>
-            </select>
-          </div>
-          <div class="setting-item">
-            <label>Brightness</label>
+            <label>Brillo</label>
             <input type="range" id="input-brightness" min="0.2" max="1.5" step="0.1" value="1">
           </div>
         </section>
-
         <section>
-          <h3>World Configuration</h3>
+          <h3>Mundo (Simulación)</h3>
           <div class="setting-item">
-            <label>Board Dimensions</label>
+            <label>Dimensiones del Mapa</label>
             <div class="input-row">
-              <div class="input-field">
-                <span>Width</span>
-                <input type="number" id="input-ancho" value="60" min="10" max="100">
-              </div>
-              <div class="input-field">
-                <span>Height</span>
-                <input type="number" id="input-alto" value="25" min="10" max="50">
-              </div>
+              <div class="input-field"><span>Ancho</span><input type="number" id="input-ancho" value="20" min="5" max="50"></div>
+              <div class="input-field"><span>Alto</span><input type="number" id="input-alto" value="12" min="5" max="30"></div>
             </div>
           </div>
           <div class="setting-item">
-            <label>Obstacles</label>
-            <input type="number" id="input-obstaculos" value="35" min="0" max="200">
+            <label>Obstáculos</label>
+            <input type="number" id="input-obstaculos" value="25" min="0" max="200">
           </div>
           <div class="setting-item">
-            <label>Population</label>
+            <label>Población</label>
             <div class="input-row">
-              <div class="input-field">
-                <span>Enemies</span>
-                <input type="number" id="input-enemigos" value="10" min="1" max="50">
-              </div>
-              <div class="input-field">
-                <span>Prey</span>
-                <input type="number" id="input-presas" value="15" min="1" max="50">
-              </div>
+              <div class="input-field"><span>Bestias</span><input type="number" id="input-enemigos" value="8" min="1" max="50"></div>
+              <div class="input-field"><span>Cazadores</span><input type="number" id="input-presas" value="12" min="1" max="50"></div>
             </div>
-          </div>
-          <div class="setting-item">
-            <label>Simulation Speed</label>
-            <input type="range" id="input-velocidad" min="20" max="500" value="100">
-            <span id="val-velocidad">100ms</span>
           </div>
         </section>
       </div>
       <footer>
-        <button id="save-settings" class="apply-btn">Apply & Restart</button>
+        <button id="save-settings" class="apply-btn">Guardar</button>
       </footer>
     </div>
   </div>
 
-  <!-- Game Screen -->
+  <!-- ═══════════════════════ CLASS SELECT OVERLAY (Oleadas) ═══════════════════════ -->
+  <div id="class-select-overlay" class="overlay hidden">
+    <div class="class-modal">
+      <h2>⚔️ Elige tu Clase</h2>
+      <p class="class-subtitle">Usa WASD para moverte. Tu personaje ataca automáticamente.</p>
+      <div class="class-cards">
+        <div class="class-card" data-clase="guerrero">
+          <div class="class-icon">⚔️</div>
+          <h3>Guerrero</h3>
+          <p>Alta resistencia, daño cuerpo a cuerpo.</p>
+          <div class="class-stats">
+            <span>❤️ Vida: <b>300</b></span>
+            <span>⚡ Velocidad: <b>Media</b></span>
+            <span>⚔️ Daño: <b>40</b></span>
+            <span>🔑 [E] Golpe Sísmico</span>
+          </div>
+        </div>
+        <div class="class-card" data-clase="arquero">
+          <div class="class-icon">🏹</div>
+          <h3>Arquero</h3>
+          <p>Atacante a distancia, muy veloz pero frágil.</p>
+          <div class="class-stats">
+            <span>❤️ Vida: <b>120</b></span>
+            <span>⚡ Velocidad: <b>Alta</b></span>
+            <span>⚔️ Daño: <b>20</b></span>
+            <span>🔑 [E] Flecha Colosal</span>
+          </div>
+        </div>
+        <div class="class-card" data-clase="explorador">
+          <div class="class-icon">🗺️</div>
+          <h3>Explorador</h3>
+          <p>Equilibrado entre resistencia y velocidad.</p>
+          <div class="class-stats">
+            <span>❤️ Vida: <b>200</b></span>
+            <span>⚡ Velocidad: <b>Media-Alta</b></span>
+            <span>⚔️ Daño: <b>30</b></span>
+            <span>🔑 [E] Esquivar</span>
+          </div>
+        </div>
+      </div>
+      <button id="btn-back-from-class" class="menu-btn-sm">← Volver al Menú</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════ BULLET HELL DIFFICULTY OVERLAY ═══════════════════════ -->
+  <div id="bh-difficulty-overlay" class="overlay hidden">
+    <div class="difficulty-modal">
+      <h2>💀 Bullet Hell</h2>
+      <p class="class-subtitle">WASD o Flechas para moverte. ¡Esquiva las balas!</p>
+      <div class="difficulty-cards">
+        <div class="diff-card easy" data-lives="5"><div class="diff-icon">💛</div><h3>Fácil</h3><p>5 vidas</p></div>
+        <div class="diff-card normal" data-lives="3"><div class="diff-icon">🧡</div><h3>Normal</h3><p>3 vidas</p></div>
+        <div class="diff-card hard" data-lives="1"><div class="diff-icon">❤️</div><h3>Difícil</h3><p>1 vida</p></div>
+      </div>
+      <button id="btn-back-from-bh" class="menu-btn-sm">← Volver al Menú</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════ WAVE END OVERLAY ═══════════════════════ -->
+  <div id="wave-end-overlay" class="overlay hidden">
+    <div class="wave-end-modal">
+      <div id="wave-end-icon" class="wave-end-icon">🏆</div>
+      <h2 id="wave-end-title">Oleada Completada</h2>
+      <p id="wave-end-desc">Gasta tu oro y prepárate para la siguiente oleada.</p>
+      <div class="wave-end-gold">💰 Oro: <b id="wave-end-gold-display">0</b></div>
+
+      <!-- ─ Tienda completa en el overlay ─ -->
+      <div class="wave-end-shop">
+        <div class="shop-section-title">MEJORAS JUGADOR</div>
+        <button class="wave-shop-btn" id="wbtn-hp">
+          <span>❤️ Vida +30%</span><span class="cost" id="wcost-hp">?g</span>
+        </button>
+        <button class="wave-shop-btn" id="wbtn-dmg">
+          <span>⚔️ Daño +20%</span><span class="cost" id="wcost-dmg">?g</span>
+        </button>
+        <button class="wave-shop-btn" id="wbtn-spd">
+          <span>⚡ Velocidad +15%</span><span class="cost" id="wcost-spd">?g</span>
+        </button>
+        <div class="shop-section-title" style="margin-top:0.6rem;">OBJETOS</div>
+        <button class="wave-shop-btn" id="wbtn-potion">
+          <span>🧪 Poción (Cura tot.)</span><span class="cost">60g</span>
+        </button>
+        <button class="wave-shop-btn" id="wbtn-shield">
+          <span>🛡️ Escudo +50</span><span class="cost">15g</span>
+        </button>
+      </div>
+
+      <button id="btn-next-wave" class="apply-btn wave-next-btn">➡️ Siguiente Oleada</button>
+      <button id="btn-wave-end-menu" class="menu-btn-sm">Abandonar</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════ STATUS BANNER ═══════════════════════ -->
+  <div id="status-banner" class="status-banner hidden"></div>
+
+  <!-- ═══════════════════════ GAME SCREEN ═══════════════════════ -->
   <div id="game-screen" class="screen hidden">
+
+    <!-- Enhanced Simulation Sidebar -->
+    <div id="sim-sidebar" class="sidebar hidden">
+      <div class="sidebar-header">
+        <h2>🧪 Simulación</h2>
+        <button id="close-sim-sidebar" class="close-btn">&times;</button>
+      </div>
+      <div class="sidebar-content">
+        <div class="shop-section-title">Herramientas</div>
+        <div class="tool-grid">
+          <button class="tool-btn active" data-tool="Obstaculo">🪨 Obstáculo</button>
+          <button class="tool-btn" data-tool="Enemigo">👹 Bestia</button>
+          <button class="tool-btn" data-tool="Tank">🛡️ Tank</button>
+          <button class="tool-btn" data-tool="Sprinter">💨 Sprinter</button>
+          <button class="tool-btn" data-tool="Presa">🗡️ Cazador</button>
+          <button class="tool-btn" data-tool="Eraser">🧹 Borrar</button>
+        </div>
+        <div class="shop-section-title" style="margin-top:1rem;">Velocidad</div>
+        <input type="range" id="input-velocidad" min="20" max="600" value="120" style="width:100%">
+        <span id="val-velocidad" style="font-size:0.8rem;color:var(--text-muted);">120ms</span>
+      </div>
+      <div class="sidebar-footer">
+        <button id="btn-run-simulation" class="apply-btn">▶ Iniciar</button>
+        <button id="btn-pause-simulation" class="apply-btn" style="background:rgba(30,30,30,0.9);margin-top:0.5rem;display:none;">⏸ Pausar</button>
+      </div>
+    </div>
+
+    <!-- Wave Mode Shop Sidebar (real-time) -->
+    <div id="oleadas-sidebar" class="sidebar hidden">
+      <div class="sidebar-header">
+        <h2>🏪 Tienda</h2>
+      </div>
+      <div class="sidebar-content">
+        <div class="shop-gold">💰 <b id="oleadas-gold">100</b>g</div>
+
+        <div class="shop-section-title" style="margin-top:0.5rem;">MEJORAS JUGADOR</div>
+        <button class="shop-btn" id="shop-btn-hp">❤️ Vida +30% <span class="cost" id="cost-hp">?g</span></button>
+        <button class="shop-btn" id="shop-btn-dmg">⚔️ Daño +20% <span class="cost" id="cost-dmg">?g</span></button>
+        <button class="shop-btn" id="shop-btn-spd">⚡ Velocidad +15% <span class="cost" id="cost-spd">?g</span></button>
+
+        <div class="shop-section-title" style="margin-top:0.5rem;">OBJETOS</div>
+        <button class="shop-btn" id="shop-btn-potion">🧪 Poción <span class="cost">60g</span></button>
+        <button class="shop-btn" id="shop-btn-shield">🛡️ Escudo +50 <span class="cost">15g</span></button>
+
+        <div style="margin-top:0.5rem;padding:0.5rem;background:rgba(212,175,55,0.08);border-radius:4px;font-size:0.7rem;color:var(--text-muted);">
+          💡 Presiona <b style="color:#fff">[E]</b> para usar tu habilidad especial
+        </div>
+      </div>
+    </div>
+
+    <!-- Main App -->
     <div id="app">
       <header>
-        <h1>Survivor <span>Chronicles</span></h1>
+        <h1 id="header-home-btn" class="game-title" style="cursor:pointer;">Hopeless <span>Despair</span></h1>
         <div class="hud">
-          <div class="stat">
-            <span class="label">Turno</span>
-            <span id="turn-count" class="value">0</span>
+          <!-- Simulation HUD -->
+          <div class="stat" id="hud-turno"><span class="label" id="hud-label-turno">Turno</span><span id="turn-count" class="value">0</span></div>
+          <div class="stat" id="hud-cazadores"><span class="label">Cazadores</span><span id="presa-count" class="value">0</span></div>
+          <div class="stat" id="hud-bestias"><span class="label">Bestias</span><span id="enemigo-count" class="value">0</span></div>
+
+          <!-- Wave Mode HUD -->
+          <div id="wave-hud" class="wave-hud hidden">
+            <div class="wave-hp-bar-wrap">
+              <div class="wave-hp-label">❤️ <span id="wave-hp-text">300/300</span></div>
+              <div class="wave-hp-track"><div id="wave-hp-fill" class="wave-hp-fill" style="width:100%"></div></div>
+            </div>
+            <div class="stat"><span class="label">Oleada</span><span id="wave-num" class="value">0</span></div>
+            <div class="stat"><span class="label">Enemies</span><span id="wave-enemies" class="value">0</span></div>
+            <div class="stat"><span class="label">Kills</span><span id="wave-kills" class="value">0</span></div>
+            <div class="stat"><span class="label">Oro</span><span id="wave-gold-hud" class="value" style="color:#d4af37">0</span></div>
+            <div class="stat"><span class="label">Tiempo</span><span id="wave-time" class="value">0s</span></div>
+            <div class="skill-cooldown-wrap" id="skill-wrap">
+              <div class="skill-btn-label">[E] <span id="skill-name">Skill</span></div>
+              <div class="skill-cd-track"><div id="skill-cd-fill" class="skill-cd-fill" style="width:0%"></div></div>
+              <span id="skill-ready" class="skill-ready-text hidden">¡Listo!</span>
+            </div>
           </div>
-          <div class="stat">
-            <span class="label">Presas</span>
-            <span id="presa-count" class="value">0</span>
+
+          <!-- BH HUD -->
+          <div id="bh-hud" class="bh-hud hidden">
+            <div id="bh-lives-container" class="bh-lives"></div>
+            <div class="stat"><span class="label">Tiempo</span><span id="bh-timer" class="value">0s</span></div>
           </div>
-          <div class="stat">
-            <span class="label">Enemigos</span>
-            <span id="enemigo-count" class="value">0</span>
-          </div>
-          <button id="menu-back-btn" class="hud-btn">Exit to Menu</button>
+
+          <button id="toggle-sim-sidebar-btn" class="hud-btn hidden">🧪 Tools</button>
+          <button id="toggle-oleadas-shop-btn" class="hud-btn hidden">🏪 Tienda</button>
+          <button id="menu-back-btn" class="hud-btn">← Salir</button>
         </div>
       </header>
 
@@ -123,18 +278,15 @@
           <div id="status-overlay" class="hidden">
             <h2 id="status-text"></h2>
             <div class="overlay-buttons">
-              <button id="overlay-restart-btn">Try Again</button>
-              <button id="overlay-menu-btn">Exit to Menu</button>
+              <button id="overlay-restart-btn">Reintentar</button>
+              <button id="overlay-menu-btn">Menú Principal</button>
             </div>
           </div>
         </div>
       </main>
-
-      <footer>
-        <p>Survivor Chronicles - Dark Fantasy Edition &copy; 2026</p>
-      </footer>
     </div>
   </div>
+
   <script type="module" src="/src/main.ts"></script>
 </body>
 

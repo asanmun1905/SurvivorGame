@@ -1,7 +1,13 @@
 import { Entidad } from '../entities/Entidad';
+import bgImgUrl from '../../assets/Background/background.png';
+import maloImgUrl from '../../assets/MaloMelee/NightBorne.png';
+import malo2ImgUrl from '../../assets/MaloRango/Necromancer_creativekind-Sheet.png';
+import buenoImgUrl from '../../assets/BuenoMelee/Sprites/IDLE/idle_down.png';
+import obsImgUrl from '../../assets/Obstacle/82cfbcc1-c0ad-4c07-91ae-ca682d039cb1_unnamed_1_-removebg-preview.png';
 
 /**
  * Clase responsable del renderizado visual y de la gestión lógica de la rejilla del tablero.
+ * Incluye interpolación suave (lerp) entre posiciones de cuadrícula para movimiento fluido.
  */
 export class Tablero {
     private ancho: number;
@@ -11,28 +17,24 @@ export class Tablero {
     private assets: Map<string, HTMLImageElement> = new Map();
     private backgroundLoaded: boolean = false;
 
-    /**
-     * Inicializa un Tablero lógico.
-     * 
-     * @param ancho - Cantidad de celdas horizontales.
-     * @param alto - Cantidad de celdas verticales.
-     */
+    // Smooth-render RAF loop
+    private animFrameId: number = 0;
+    private renderLoopActive: boolean = false;
+    private extraDrawCallback: (() => void) | null = null;
+
     constructor(ancho: number, alto: number) {
         this.ancho = ancho;
         this.alto = alto;
         this.cargarAssets();
     }
 
-    /**
-     * Carga las imágenes necesarias para el juego.
-     */
     private cargarAssets(): void {
         const paths: Record<string, string> = {
-            'background': '/assets/Background/background.png',
-            'malo': '/assets/MaloMelee/NightBorne.png',
-            'malo2': '/assets/MaloRango/Necromancer_creativekind-Sheet.png',
-            'bueno': '/assets/BuenoMelee/Sprites/IDLE/idle_down.png',
-            'obstaculo': '/assets/Obstacle/82cfbcc1-c0ad-4c07-91ae-ca682d039cb1_unnamed_1_.jpg'
+            'background': bgImgUrl,
+            'malo': maloImgUrl,
+            'malo2': malo2ImgUrl,
+            'bueno': buenoImgUrl,
+            'obstaculo': obsImgUrl
         };
 
         for (const [key, path] of Object.entries(paths)) {
@@ -45,129 +47,150 @@ export class Tablero {
         }
     }
 
-    /**
-     * Reconfigura las dimensiones del tablero.
-     */
     public resetDimensiones(ancho: number, alto: number): void {
         this.ancho = ancho;
         this.alto = alto;
     }
 
-    /**
-     * Vincula el contexto del Canvas para permitir el dibujo.
-     * 
-     * @param ctx - El contexto 2D del elemento Canvas.
-     * @param cellSize - El tamaño en píxeles de cada celda del juego.
-     */
     public setContext(ctx: CanvasRenderingContext2D, cellSize: number): void {
         this.ctx = ctx;
         this.cellSize = cellSize;
     }
 
-    /** @returns Ancho del tablero en celdas */
-    public getAncho(): number {
-        return this.ancho;
+    public getAncho(): number { return this.ancho; }
+    public getAlto(): number { return this.alto; }
+
+    /**
+     * Inicia un bucle de renderizado con rAF que interpola suavemente
+     * las posiciones visuales de las entidades.
+     * @param getEntidades Callback para obtener entidades actualizadas
+     * @param extraDraw Extra drawing callback (e.g. BulletHell bullets)
+     */
+    public iniciarRenderLoop(
+        getEntidades: () => Entidad[],
+        extraDraw?: () => void
+    ): void {
+        this.extraDrawCallback = extraDraw ?? null;
+        this.renderLoopActive = true;
+
+        const LERP_SPEED = 0.18; // 0 = instant, 1 = no movement
+
+        const tick = () => {
+            if (!this.renderLoopActive) return;
+
+            const entidades = getEntidades();
+            // Lerp render positions toward logical positions
+            for (const e of entidades) {
+                e.renderX += (e.getX() - e.renderX) * (1 - LERP_SPEED);
+                e.renderY += (e.getY() - e.renderY) * (1 - LERP_SPEED);
+                // Snap when close enough
+                if (Math.abs(e.renderX - e.getX()) < 0.01) e.renderX = e.getX();
+                if (Math.abs(e.renderY - e.getY()) < 0.01) e.renderY = e.getY();
+            }
+
+            this.dibujarFrame(entidades);
+            this.animFrameId = requestAnimationFrame(tick);
+        };
+
+        this.animFrameId = requestAnimationFrame(tick);
     }
 
-    /** @returns Alto del tablero en celdas */
-    public getAlto(): number {
-        return this.alto;
+    /** Stops the continuous rAF render loop */
+    public detenerRenderLoop(): void {
+        this.renderLoopActive = false;
+        cancelAnimationFrame(this.animFrameId);
     }
 
     /**
-     * Limpia el canvas y dibuja todas las entidades actuales, junto con una rejilla de fondo.
-     * 
-     * @param entidades - Lista de entidades a renderizar.
+     * One-shot draw (for sandbox initial render or static frames).
      */
     public dibujar(entidades: Entidad[]): void {
-        if (!this.ctx) {
-            return;
-        }
+        if (!this.ctx) return;
+        this.dibujarFrame(entidades);
+    }
+
+    private dibujarFrame(entidades: Entidad[]): void {
+        if (!this.ctx) return;
 
         const canvas = this.ctx.canvas;
-
-        // 1. Limpiar el fondo
         this.ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // 2. Dibujar fondo (Imagen o Gradiente Oscuro)
+        // Background
         const bgImg = this.assets.get('background');
         if (this.backgroundLoaded && bgImg) {
             this.ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
         } else {
-            this.ctx.fillStyle = "#0f172a";
+            this.ctx.fillStyle = '#0f172a';
             this.ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
 
-        // 3. Dibujar cada entidad
+        // Extra draw layer (e.g. BulletHell background handled separately)
+        if (this.extraDrawCallback) {
+            this.extraDrawCallback();
+        }
+
+        // Entities
         for (const entidad of entidades) {
             this.dibujarEntidad(entidad);
         }
     }
 
-
     private dibujarEntidad(entidad: Entidad): void {
         if (!this.ctx) return;
 
-        const xPx = entidad.getX() * this.cellSize;
-        const yPx = entidad.getY() * this.cellSize;
+        // Use smooth render position (lerped)
+        const xPx = entidad.renderX * this.cellSize;
+        const yPx = entidad.renderY * this.cellSize;
+        const scale = entidad.getVisualScale();
+        const tint = entidad.getTint();
         const assetKey = entidad.getAssetKey();
         const assetImg = this.assets.get(assetKey);
+        const drawSize = this.cellSize * scale;
+        // Center the scaled entity on the cell
+        const offsetX = xPx - (drawSize - this.cellSize) / 2;
+        const offsetY = yPx - (drawSize - this.cellSize) / 2;
 
         this.ctx.save();
 
-        // Efecto de profundidad / sombra
-        this.ctx.shadowBlur = 10;
-        this.ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
-        this.ctx.shadowOffsetY = 2;
-
-        if (assetImg && assetImg.complete) {
-            // Dibujar Sprite
-            this.ctx.drawImage(assetImg, xPx, yPx, this.cellSize, this.cellSize);
+        if (assetImg && assetImg.complete && assetImg.naturalWidth !== 0) {
+            this.ctx.drawImage(assetImg, offsetX, offsetY, drawSize, drawSize);
+            // Apply tint overlay
+            if (tint) {
+                this.ctx.globalAlpha = 0.45;
+                this.ctx.fillStyle = tint;
+                this.ctx.fillRect(offsetX, offsetY, drawSize, drawSize);
+                this.ctx.globalAlpha = 1;
+            }
         } else {
-            // Fallback a dibujo vectorial original
-            const radio = this.cellSize / 2;
-            this.ctx.shadowBlur = 15;
-            this.ctx.shadowColor = entidad.getColor();
+            // Fallback circle
+            const radio = (this.cellSize * scale) / 2;
             this.ctx.fillStyle = entidad.getColor();
             this.ctx.beginPath();
-            this.ctx.arc(xPx + radio, yPx + radio, radio * 0.8, 0, Math.PI * 2);
+            this.ctx.arc(xPx + this.cellSize / 2, yPx + this.cellSize / 2, radio * 0.8, 0, Math.PI * 2);
             this.ctx.fill();
 
-            this.ctx.shadowBlur = 0;
-            this.ctx.fillStyle = "white";
-            this.ctx.font = `bold ${this.cellSize * 0.7}px 'Outfit', Arial`;
-            this.ctx.textAlign = "center";
-            this.ctx.textBaseline = "middle";
-            this.ctx.fillText(entidad.getSimbolo(), xPx + radio, yPx + radio);
+            this.ctx.fillStyle = 'white';
+            this.ctx.font = `bold ${this.cellSize * 0.7 * scale}px 'Outfit', Arial`;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText(entidad.getSimbolo(), xPx + this.cellSize / 2, yPx + this.cellSize / 2);
         }
 
         this.ctx.restore();
     }
 
-    /**
-     * Genera una matriz de strings que representa el estado de ocupación del tablero.
-     * Útil para que la IA decida sus movimientos sin pisar otras entidades.
-     * 
-     * @param entidades - Lista de entidades presentes.
-     * @returns Matriz de nombres de clase de las entidades.
-     */
     public obtenerCaptura(entidades: Entidad[]): string[][] {
-        // Inicializamos matriz vacía
         const captura: string[][] = Array.from(
             { length: this.alto },
-            () => Array(this.ancho).fill("")
+            () => Array(this.ancho).fill('')
         );
 
         for (const e of entidades) {
             const x = e.getX();
             const y = e.getY();
-
-            // Verificamos límites preventivamente
             if (x >= 0 && x < this.ancho && y >= 0 && y < this.alto) {
                 const nombreTipo = e.constructor.name;
-
-                // Prioridad: Los obstáculos son permanentes
-                if (captura[y][x] === "" || captura[y][x] !== "Obstaculo") {
+                if (captura[y][x] === '' || captura[y][x] !== 'Obstaculo') {
                     captura[y][x] = nombreTipo;
                 }
             }
