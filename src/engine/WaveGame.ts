@@ -33,6 +33,20 @@ const MALO_MELEE_ASSETS = {
         import.meta.glob('../../assets/MaloMelee/RunRight4-removebg-preview.png', { eager: true, as: 'url' }),
         import.meta.glob('../../assets/MaloMelee/RunRight5-removebg-preview.png', { eager: true, as: 'url' }),
         import.meta.glob('../../assets/MaloMelee/RunRight6-removebg-preview.png', { eager: true, as: 'url' })
+    ],
+    runBack: [
+        import.meta.glob('../../assets/MaloMelee/RunBack1.png', { eager: true, as: 'url' }),
+        import.meta.glob('../../assets/MaloMelee/RunBack2.png', { eager: true, as: 'url' }),
+        import.meta.glob('../../assets/MaloMelee/RunBack3.png', { eager: true, as: 'url' }),
+        import.meta.glob('../../assets/MaloMelee/RunBack4.png', { eager: true, as: 'url' }),
+        import.meta.glob('../../assets/MaloMelee/RunBack5.png', { eager: true, as: 'url' }),
+        import.meta.glob('../../assets/MaloMelee/RunBack6.png', { eager: true, as: 'url' })
+    ],
+    runFront: [
+        import.meta.glob('../../assets/MaloMelee/RunFront1.png', { eager: true, as: 'url' }),
+        import.meta.glob('../../assets/MaloMelee/RunFront2.png', { eager: true, as: 'url' }),
+        import.meta.glob('../../assets/MaloMelee/RunFront3.png', { eager: true, as: 'url' }),
+        import.meta.glob('../../assets/MaloMelee/RunFront4.png', { eager: true, as: 'url' }),
     ]
 };
 
@@ -55,17 +69,17 @@ interface ClaseStats {
 const CLASES_STATS: Record<ClaseWave, ClaseStats> = {
     guerrero: {
         nombre: 'Guerrero', emoji: '⚔️',
-        hp: 300, speed: 140, damage: 40, attackRange: 60, attackCooldown: 0.6,
+        hp: 300, speed: 140, damage: 40, attackRange: 120, attackCooldown: 0.6,
         skill: 'Golpe Sísmico', skillCooldown: 10, color: '#ef4444'
     },
     arquero: {
         nombre: 'Arquero', emoji: '🏹',
-        hp: 120, speed: 200, damage: 20, attackRange: 150, attackCooldown: 0.4,
+        hp: 120, speed: 200, damage: 20, attackRange: 300, attackCooldown: 0.4,
         skill: 'Flecha Colosal', skillCooldown: 8, color: '#22c55e'
     },
     explorador: {
         nombre: 'Explorador', emoji: '🗺️',
-        hp: 200, speed: 165, damage: 30, attackRange: 100, attackCooldown: 0.5,
+        hp: 200, speed: 165, damage: 30, attackRange: 200, attackCooldown: 0.5,
         skill: 'Esquivar', skillCooldown: 6, color: '#d4af37'
     }
 };
@@ -89,6 +103,7 @@ interface Enemy {
     spottedPlayer: boolean;
     wanderTarget: { x: number, y: number } | null;
     wanderWaitTimer: number;
+    moveMode: 'horizontal' | 'up' | 'down';
 }
 
 interface Obstacle {
@@ -181,9 +196,11 @@ export class WaveGame {
     private running: boolean = false;
     private waveActive: boolean = false;
     private enemigoIdCounter: number = 0;
+    private waveStartTimer: number = 0;
+    private readonly WAVE_INTERVAL = 20;
 
     // Corner spawn zones (as fractions of W/H)
-    private readonly SPAWN_MARGIN = 0.08;
+    private readonly SPAWN_MARGIN = 0.15;
 
     // Key state
     private keys: { [k: string]: boolean } = {};
@@ -231,7 +248,9 @@ export class WaveGame {
         const meleeFrames = [
             { key: 'malo_idle', src: Object.values(MALO_MELEE_ASSETS.idleFront)[0] as string },
             ...MALO_MELEE_ASSETS.attack.map((f, i) => ({ key: `malo_attack_${i}`, src: Object.values(f)[0] as string })),
-            ...MALO_MELEE_ASSETS.runRight.map((f, i) => ({ key: `malo_run_${i}`, src: Object.values(f)[0] as string }))
+            ...MALO_MELEE_ASSETS.runRight.map((f, i) => ({ key: `malo_run_side_${i}`, src: Object.values(f)[0] as string })),
+            ...MALO_MELEE_ASSETS.runBack.map((f, i) => ({ key: `malo_run_up_${i}`, src: Object.values(f)[0] as string })),
+            ...MALO_MELEE_ASSETS.runFront.map((f, i) => ({ key: `malo_run_down_${i}`, src: Object.values(f)[0] as string }))
         ];
 
         for (const frame of meleeFrames) {
@@ -267,6 +286,7 @@ export class WaveGame {
     public start(): void {
         this.running = true;
         this.lastTime = performance.now();
+        this.spawnObstacles();
         this.startWave();
         this.loop(this.lastTime);
     }
@@ -284,12 +304,12 @@ export class WaveGame {
         this.wave++;
         this.waveTime = 0;
         this.waveActive = true;
-        this.enemies = [];
-        this.projectiles = [];
-        this.obstacles = [];
+        this.waveStartTimer = this.WAVE_INTERVAL; // Start timer for next wave
+        
+        // No clear enemies or projectiles - they persist across waves
+        
         this.callbacks.onWaveChange(this.wave);
         this.callbacks.onStatusMsg(`OLEADA ${this.wave}`);
-        this.spawnObstacles();
         this.spawnEnemiesForWave();
     }
 
@@ -323,9 +343,9 @@ export class WaveGame {
                 const isSprinter = !isTank && i < tanks + sprinters;
                 const pos = this.getCornerSpawnPos();
 
-                const hp = isTank ? (200 + this.wave * 20) : isSprinter ? (25 + this.wave * 5) : (60 + this.wave * 10);
-                const speed = isTank ? 40 : isSprinter ? 120 : (60 + this.wave * 3);
-                const damage = isTank ? 30 : isSprinter ? 8 : 15;
+                const hp = isTank ? (240 + this.wave * 25) : isSprinter ? (30 + this.wave * 7) : (75 + this.wave * 12);
+                const speed = isTank ? 45 : isSprinter ? 130 : (70 + this.wave * 4);
+                const damage = isTank ? 35 : isSprinter ? 10 : 18;
                 const assetKey = isSprinter ? 'malo2' : 'malo';
 
                 this.enemies.push({
@@ -343,7 +363,8 @@ export class WaveGame {
                     detectionRadius: 180 + Math.random() * 40,
                     spottedPlayer: false,
                     wanderTarget: null,
-                    wanderWaitTimer: Math.random() * 2
+                    wanderWaitTimer: Math.random() * 2,
+                    moveMode: 'horizontal'
                 });
                 this.callbacks.onEnemiesChange(this.enemies.length);
             }, i * spawnDelay);
@@ -379,16 +400,19 @@ export class WaveGame {
         this.totalTime += dt;
         this.callbacks.onTimeChange(this.totalTime);
 
+        // Wave auto-start timer
+        if (this.waveStartTimer > 0) {
+            this.waveStartTimer -= dt;
+            if (this.waveStartTimer <= 0) {
+                this.startWave();
+            }
+        }
+
         this.updatePlayer(dt);
         this.updateEnemies(dt);
         this.updateProjectiles(dt);
         this.updateDamageNumbers(dt);
         this.updateAoEEffects(dt);
-
-        if (this.waveActive && this.enemies.length === 0 && this.waveTime > 1) {
-            this.waveActive = false;
-            this.callbacks.onWaveEnd(this.wave, this.player.gold);
-        }
     }
 
     private updatePlayer(dt: number): void {
@@ -441,9 +465,11 @@ export class WaveGame {
                     this.fireProjectileAt(p.x, p.y, nearest.x, nearest.y, p.damage * p.dmgBoost, true, isArcher ? 'flecha' : undefined);
                 }
                 
-                // Warrior melee AoE effect
+                // Attack AoE visual feedback
                 if (isWarrior) {
-                    this.spawnAoE(p.x, p.y, p.attackRange, 0.2, 'rgba(239, 68, 68, 0.2)');
+                    this.spawnAoE(p.x, p.y, p.attackRange, 0.2, 'rgba(239, 68, 68, 0.25)');
+                } else if (isArcher) {
+                    this.spawnAoE(p.x, p.y, p.attackRange, 0.2, 'rgba(34, 197, 94, 0.15)');
                 }
             }
         }
@@ -470,13 +496,17 @@ export class WaveGame {
         
         // Visual for skill
         if (this.clase.nombre === 'Guerrero') {
-            this.spawnAoE(p.x, p.y, range, 0.5, 'rgba(239, 68, 68, 0.3)');
+            this.spawnAoE(p.x, p.y, range, 0.5, 'rgba(239, 68, 68, 0.35)');
         } else if (this.clase.nombre === 'Arquero') {
             // Archer skill: large arrow
             const nearest = this.findNearestEnemy(p.x, p.y, 1000);
             if (nearest) {
-                this.fireProjectileAt(p.x, p.y, nearest.x, nearest.y, p.damage * p.dmgBoost * 5, true, 'flecha', 2.0);
-                this.spawnAoE(p.x, p.y, 40, 0.3, 'rgba(34, 197, 94, 0.3)');
+                // Skil projectile is MUCH bigger and hits all in its path (conceptual)
+                // For simplicity, we fire one big arrow and the global loop handles dmg
+                this.fireProjectileAt(p.x, p.y, nearest.x, nearest.y, p.damage * p.dmgBoost * 5, true, 'flecha', 4.0);
+                this.spawnAoE(p.x, p.y, range, 0.5, 'rgba(34, 197, 94, 0.3)');
+            } else {
+                 this.spawnAoE(p.x, p.y, range, 0.5, 'rgba(34, 197, 94, 0.3)');
             }
         }
         
@@ -501,15 +531,27 @@ export class WaveGame {
             }
 
             if (e.spottedPlayer) {
-                if (dPl > 15) {
+                const eSize = e.isTank ? 75 : e.isSprinter ? 40 : 55;
+                const pSize = 60;
+                const attackThreshold = (eSize + pSize) * 0.45;
+
+                if (dPl > attackThreshold) {
                     e.state = 'run';
                     const moveX = (dxPl / dPl) * e.speed * dt;
                     const moveY = (dyPl / dPl) * e.speed * dt;
-                    if (!this.checkObstacleCollision(e.x + moveX, e.y + moveY, 15)) {
+
+                    // Directional mode
+                    if (Math.abs(moveY) > Math.abs(moveX) * 1.5) {
+                        e.moveMode = moveY < 0 ? 'up' : 'down';
+                    } else {
+                        e.moveMode = 'horizontal';
+                        if (Math.abs(dxPl) > 2) e.direction = dxPl > 0 ? 1 : -1;
+                    }
+
+                    if (!this.checkObstacleCollision(e.x + moveX, e.y + moveY, 20)) {
                         e.x += moveX;
                         e.y += moveY;
                     }
-                    if (Math.abs(dxPl) > 2) e.direction = dxPl > 0 ? 1 : -1;
                 } else {
                     // Melee attack range
                     e.state = 'attack';
@@ -548,14 +590,22 @@ export class WaveGame {
                     if (dW > 5) {
                         const moveX = (dxW / dW) * (e.speed * 0.6) * dt;
                         const moveY = (dyW / dW) * (e.speed * 0.6) * dt;
-                        if (!this.checkObstacleCollision(e.x + moveX, e.y + moveY, 15)) {
+
+                        // Directional mode
+                        if (Math.abs(moveY) > Math.abs(moveX) * 1.5) {
+                            e.moveMode = moveY < 0 ? 'up' : 'down';
+                        } else {
+                            e.moveMode = 'horizontal';
+                            if (Math.abs(dxW) > 2) e.direction = dxW > 0 ? 1 : -1;
+                        }
+
+                        if (!this.checkObstacleCollision(e.x + moveX, e.y + moveY, 20)) {
                             e.x += moveX;
                             e.y += moveY;
                         } else {
                             e.wanderTarget = null;
                             e.wanderWaitTimer = 1 + Math.random() * 2;
                         }
-                        if (Math.abs(dxW) > 2) e.direction = dxW > 0 ? 1 : -1;
                     } else {
                         e.wanderTarget = null;
                         e.wanderWaitTimer = 1 + Math.random() * 2;
@@ -580,7 +630,11 @@ export class WaveGame {
             if (e.frameTimer > 1 / fps) {
                 e.frameTimer = 0;
                 if (e.state === 'idle') e.frame = 0;
-                else if (e.state === 'run') e.frame = (e.frame + 1) % 6;
+                else if (e.state === 'run') {
+                    if (e.moveMode === 'up') e.frame = (e.frame + 1) % 6;
+                    else if (e.moveMode === 'down') e.frame = (e.frame + 1) % 4;
+                    else e.frame = (e.frame + 1) % 6;
+                }
                 else if (e.state === 'attack') e.frame = (e.frame + 1) % 4;
             }
         }
@@ -678,7 +732,7 @@ export class WaveGame {
             vx: dx / d, vy: dy / d,
             damage,
             fromPlayer,
-            radius: fromPlayer ? (assetKey ? 8 * scale : 5) : 7,
+            radius: fromPlayer ? (assetKey ? 12 * scale : 8) : 9,
             life: 1.5,
             color: fromPlayer ? (this.clase.color) : '#f97316',
             assetKey,
@@ -727,7 +781,9 @@ export class WaveGame {
         this.drawObstacles();
 
         // Player
-        this.drawPlayer();
+        if (this.player.hp > 0) {
+            this.drawPlayer();
+        }
 
         // Enemies
         for (const e of this.enemies) this.drawEnemy(e);
@@ -740,8 +796,8 @@ export class WaveGame {
             
             if (p.assetKey && this.assets.has(p.assetKey)) {
                 const img = this.assets.get(p.assetKey)!;
-                const sw = 24 * (p.scale || 1);
-                const sh = 10 * (p.scale || 1);
+                const sw = 48 * (p.scale || 1);
+                const sh = 20 * (p.scale || 1);
                 ctx.drawImage(img, -sw/2, -sh/2, sw, sh);
             } else {
                 ctx.beginPath();
@@ -813,19 +869,26 @@ export class WaveGame {
     private drawPlayer(): void {
         const p = this.player;
         const ctx = this.ctx;
-        const SIZE = 45;
+        const SIZE = 80;
         const blink = p.invincible && Math.floor(p.invincibleTimer * 10) % 2 === 0;
 
         if (!blink) {
-            // Glow behind
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, SIZE * 0.9, 0, Math.PI * 2);
-            ctx.fillStyle = p.skillActive ? 'rgba(255,215,0,0.3)' : `${this.clase.color}22`;
-            ctx.fill();
+            // Optional: Draw a subtle indicator ONLY during skill
+            if (p.skillActive) {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, SIZE * 0.9, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255,215,0,0.25)';
+                ctx.fill();
+            }
 
             const img = this.assets.get('bueno');
             if (img && this.assetsLoaded.has('bueno')) {
-                ctx.drawImage(img, p.x - SIZE / 2, p.y - SIZE / 2, SIZE, SIZE);
+                // idle_down.png is a sprite sheet with 8 frames
+                const frameW = img.width / 8;
+                ctx.drawImage(img, 
+                    0, 0, frameW, img.height, 
+                    p.x - SIZE / 2, p.y - SIZE / 2, SIZE, SIZE
+                );
             } else {
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, SIZE / 2, 0, Math.PI * 2);
@@ -854,7 +917,7 @@ export class WaveGame {
 
     private drawEnemy(e: Enemy): void {
         const ctx = this.ctx;
-        const size = e.isTank ? 55 : e.isSprinter ? 30 : 42;
+        const size = e.isTank ? 100 : e.isSprinter ? 55 : 75;
 
         // Hit flash
         if (e.hitFlash > 0) {
@@ -866,7 +929,11 @@ export class WaveGame {
         }
 
         const imgKey = e.state === 'idle' ? 'malo_idle' : 
-                       e.state === 'run' ? `malo_run_${e.frame}` : 
+                       e.state === 'run' ? (
+                           e.moveMode === 'up' ? `malo_run_up_${e.frame}` :
+                           e.moveMode === 'down' ? `malo_run_down_${e.frame}` :
+                           `malo_run_side_${e.frame}`
+                       ) : 
                        `malo_attack_${e.frame}`;
                        
         const img = this.assets.get(imgKey);

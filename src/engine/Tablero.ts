@@ -13,7 +13,7 @@ export class Tablero {
     private ancho: number;
     private alto: number;
     private ctx: CanvasRenderingContext2D | null = null;
-    private cellSize: number = 20;
+    private cellSize: number = 40;
     private assets: Map<string, HTMLImageElement> = new Map();
     private backgroundLoaded: boolean = false;
 

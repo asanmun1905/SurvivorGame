@@ -3,6 +3,8 @@
  * El jugador esquiva proyectiles que aumentan en densidad y velocidad con el tiempo.
  */
 
+import buenoImgUrl from '../../assets/BuenoMelee/Sprites/IDLE/idle_down.png';
+
 export type BulletPattern = 'espiral' | 'cortina' | 'embudo' | 'aleatorio' | 'radial';
 
 interface Bullet {
@@ -28,7 +30,7 @@ export class BulletHell {
     // Player logical state
     private playerX: number;
     private playerY: number;
-    private playerRadius: number = 14;
+    private playerRadius: number = 28;
     private playerSpeed: number = 220; // px/s
 
     // Invincibility
@@ -56,6 +58,10 @@ export class BulletHell {
     private bgImg: HTMLImageElement | null = null;
     private bgLoaded: boolean = false;
 
+    // Player Asset
+    private playerImg: HTMLImageElement | null = null;
+    private playerLoaded: boolean = false;
+
     // Callbacks
     private onLivesChange: (lives: number) => void;
     private onTimeChange: (elapsed: number) => void;
@@ -81,10 +87,13 @@ export class BulletHell {
         this.playerX = canvas.width / 2;
         this.playerY = canvas.height / 2;
 
-        // Background
         this.bgImg = new Image();
         this.bgImg.src = bgImgUrl;
         this.bgImg.onload = () => { this.bgLoaded = true; };
+
+        this.playerImg = new Image();
+        this.playerImg.src = buenoImgUrl;
+        this.playerImg.onload = () => { this.playerLoaded = true; };
 
         // Keyboard setup
         this.keyHandler = (e: KeyboardEvent) => this.onKeyDown(e);
@@ -224,11 +233,11 @@ export class BulletHell {
             for (let i = 0; i < count; i++) {
                 const angle = (i / count) * Math.PI * 2 + this.elapsed * 1.2;
                 const speed = 2.8;
-                this.bullets.push({ x: cx, y: cy, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, radius: 8, color: '#f97316' });
+                this.bullets.push({ x: cx, y: cy, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, radius: 12, color: '#f97316' });
             }
         } else if (pattern === 'cortina') {
             for (let i = 0; i < count; i++) {
-                this.bullets.push({ x: Math.random() * w, y: -10, vx: (Math.random() - 0.5) * 1.5, vy: 3 + Math.random() * 2, radius: 7, color: '#dc2626' });
+                this.bullets.push({ x: Math.random() * w, y: -10, vx: (Math.random() - 0.5) * 1.5, vy: 3 + Math.random() * 2, radius: 10, color: '#dc2626' });
             }
         } else if (pattern === 'embudo') {
             const sides = [
@@ -240,7 +249,7 @@ export class BulletHell {
             for (const s of sides) {
                 for (let i = 0; i < Math.ceil(count / 4); i++) {
                     const spr = (i - count / 8) * 0.35;
-                    this.bullets.push({ x: s.x, y: s.y, vx: s.vx + spr, vy: s.vy + spr, radius: 8, color: '#a855f7' });
+                    this.bullets.push({ x: s.x, y: s.y, vx: s.vx + spr, vy: s.vy + spr, radius: 12, color: '#a855f7' });
                 }
             }
         } else if (pattern === 'radial') {
@@ -255,7 +264,7 @@ export class BulletHell {
             for (let i = 0; i < count; i++) {
                 const ang = base + (Math.random() - 0.5) * 0.8;
                 const spd = 2.5 + Math.random() * 1.5;
-                this.bullets.push({ x: ox, y: oy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, radius: 8, color: '#ef4444' });
+                this.bullets.push({ x: ox, y: oy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, radius: 12, color: '#ef4444' });
             }
         } else {
             const edge = Math.floor(Math.random() * 4);
@@ -299,7 +308,7 @@ export class BulletHell {
             ctx.beginPath();
             ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
             ctx.fillStyle = b.color;
-            ctx.shadowBlur = 14;
+            ctx.shadowBlur = 18;
             ctx.shadowColor = b.color;
             ctx.fill();
             ctx.shadowBlur = 0;
@@ -319,22 +328,35 @@ export class BulletHell {
         // Player
         const blink = this.invincible && Math.floor(this.invincibleTimer * 10) % 2 === 0;
         if (!blink) {
+            const size = this.playerRadius * 2.2;
+            
+            // Glow behind
             ctx.beginPath();
-            ctx.arc(this.playerX, this.playerY, this.playerRadius * 1.6, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(212,175,55,0.12)';
+            ctx.arc(this.playerX, this.playerY, size * 0.45, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(212,175,55,0.2)';
             ctx.fill();
 
-            ctx.beginPath();
-            ctx.arc(this.playerX, this.playerY, this.playerRadius, 0, Math.PI * 2);
-            ctx.fillStyle = this.invincible ? '#60a5fa' : '#d4af37';
-            ctx.shadowBlur = 22;
-            ctx.shadowColor = this.invincible ? '#60a5fa' : '#d4af37';
-            ctx.fill();
-            ctx.shadowBlur = 0;
+            if (this.playerLoaded && this.playerImg) {
+                // idle_down.png is a sprite sheet with 8 frames
+                const img = this.playerImg;
+                const frameW = img.width / 8;
+                ctx.drawImage(img,
+                    0, 0, frameW, img.height,
+                    this.playerX - size / 2, this.playerY - size / 2, size, size
+                );
+            } else {
+                ctx.beginPath();
+                ctx.arc(this.playerX, this.playerY, this.playerRadius, 0, Math.PI * 2);
+                ctx.fillStyle = this.invincible ? '#60a5fa' : '#d4af37';
+                ctx.shadowBlur = 22;
+                ctx.shadowColor = this.invincible ? '#60a5fa' : '#d4af37';
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
 
             // Hitbox dot
             ctx.beginPath();
-            ctx.arc(this.playerX, this.playerY, 3, 0, Math.PI * 2);
+            ctx.arc(this.playerX, this.playerY, 4, 0, Math.PI * 2);
             ctx.fillStyle = '#fff';
             ctx.fill();
         }
