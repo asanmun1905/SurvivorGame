@@ -1,6 +1,6 @@
 import { Entidad } from '../entities/Entidad';
 import bgImgUrl from '../../assets/Background/background.png';
-import maloImgUrl from '../../assets/MaloMelee/NightBorne.png';
+import maloImgUrl from '../../assets/MaloMelee/IdleFront-removebg-preview.png';
 import malo2ImgUrl from '../../assets/MaloRango/Necromancer_creativekind-Sheet.png';
 import buenoImgUrl from '../../assets/BuenoMelee/Sprites/IDLE/idle_down.png';
 import obsImgUrl from '../../assets/Obstacle/82cfbcc1-c0ad-4c07-91ae-ca682d039cb1_unnamed_1_-removebg-preview.png';
