@@ -24,7 +24,7 @@
         <div class="mode-card featured" id="btn-start">
           <div class="mode-card-icon">🧪</div>
           <h3>Simulación</h3>
-          <p>Coloca entidades, ajusta la velocidad y observa la batalla.</p>
+          <p>Coloca entidades, ajusta la velocidad y observa la batalla. O elige jugar tú mismo.</p>
         </div>
         <div class="mode-card" id="btn-oleadas">
           <div class="mode-card-icon">⚔️</div>
@@ -85,11 +85,32 @@
     </div>
   </div>
 
+  <!-- ═══════════════════════ SANDBOX CHOICE OVERLAY ═══════════════════════ -->
+  <div id="sandbox-choice-overlay" class="overlay hidden">
+    <div class="class-modal">
+      <h2>🧪 Elige el Modo de Simulación</h2>
+      <p class="class-subtitle">Selecciona cómo deseas experimentar la simulación.</p>
+      <div class="class-cards">
+        <div class="class-card" id="btn-choice-sim">
+          <div class="class-icon">👁️</div>
+          <h3>Modo Espectador</h3>
+          <p>Coloca entidades, ajusta los parámetros y observa cómo combaten entre ellos.</p>
+        </div>
+        <div class="class-card" id="btn-choice-jugable">
+          <div class="class-icon">🎮</div>
+          <h3>Modo Jugable</h3>
+          <p>Crea tu propio escenario, configura los enemigos y únete a la batalla como jugador.</p>
+        </div>
+      </div>
+      <button id="btn-back-from-choice" class="menu-btn-sm">← Volver al Menú</button>
+    </div>
+  </div>
+
   <!-- ═══════════════════════ CLASS SELECT OVERLAY (Oleadas) ═══════════════════════ -->
   <div id="class-select-overlay" class="overlay hidden">
     <div class="class-modal">
       <h2>⚔️ Elige tu Clase</h2>
-      <p class="class-subtitle">Usa WASD para moverte. Tu personaje ataca automáticamente.</p>
+      <p class="class-subtitle">Haz clic o mantén pulsado para atacar en dirección al ratón.</p>
       <div class="class-cards">
         <div class="class-card" data-clase="guerrero">
           <div class="class-icon">⚔️</div>
@@ -113,19 +134,45 @@
             <span>🔑 [E] Flecha Colosal</span>
           </div>
         </div>
-        <div class="class-card" data-clase="explorador">
-          <div class="class-icon">🗺️</div>
-          <h3>Explorador</h3>
-          <p>Equilibrado entre resistencia y velocidad.</p>
-          <div class="class-stats">
-            <span>❤️ Vida: <b>200</b></span>
-            <span>⚡ Velocidad: <b>Media-Alta</b></span>
-            <span>⚔️ Daño: <b>30</b></span>
-            <span>🔑 [E] Esquivar</span>
-          </div>
-        </div>
       </div>
       <button id="btn-back-from-class" class="menu-btn-sm">← Volver al Menú</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════ PLAYABLE SANDBOX SETUP OVERLAY ═══════════════════════ -->
+  <div id="psb-setup-overlay" class="overlay hidden">
+    <div class="settings-modal" style="max-width: 600px;">
+      <header>
+        <h2>🎮 Configuración Sandbox Jugable</h2>
+        <button id="close-psb-setup" class="close-btn">&times;</button>
+      </header>
+      <div class="settings-scroll">
+        <section>
+          <h3>Tu Personaje</h3>
+          <div class="class-selection-cards" id="psb-class-selection" style="display:flex; gap:10px; margin-bottom:15px;">
+             <!-- Rellenado por JS -->
+          </div>
+          <div class="setting-item">
+            <label>Vida Máxima (Extra)</label>
+            <input type="number" id="input-psb-hp" value="0" min="0" max="5000">
+          </div>
+          <div class="setting-item">
+            <label>Daño (Extra)</label>
+            <input type="number" id="input-psb-dmg" value="0" min="0" max="1000">
+          </div>
+        </section>
+        <section>
+          <h3>Mundo</h3>
+          <div class="setting-item">
+            <label>Dimensiones del Mapa</label>
+            <div class="input-row">
+              <div class="input-field"><span>Ancho</span><input type="number" id="input-psb-ancho" value="20" min="10" max="50"></div>
+              <div class="input-field"><span>Alto</span><input type="number" id="input-psb-alto" value="12" min="10" max="30"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+      <button id="btn-psb-to-grid" class="apply-btn" style="margin-top:1rem; width:100%">Continuar a Colocación →</button>
     </div>
   </div>
 
@@ -163,6 +210,12 @@
         <button class="wave-shop-btn" id="wbtn-spd">
           <span>⚡ Velocidad +15%</span><span class="cost" id="wcost-spd">?g</span>
         </button>
+        <button class="wave-shop-btn" id="wbtn-gold">
+          <span>💰 Oro +20%</span><span class="cost" id="wcost-gold">?g</span>
+        </button>
+        <button class="wave-shop-btn" id="wbtn-exp">
+          <span>🌟 XP +20%</span><span class="cost" id="wcost-exp">?g</span>
+        </button>
         <div class="shop-section-title" style="margin-top:0.6rem;">OBJETOS</div>
         <button class="wave-shop-btn" id="wbtn-potion">
           <span>🧪 Poción (Cura tot.)</span><span class="cost">60g</span>
@@ -174,6 +227,14 @@
 
       <button id="btn-next-wave" class="apply-btn wave-next-btn">➡️ Siguiente Oleada</button>
       <button id="btn-wave-end-menu" class="menu-btn-sm">Abandonar</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════ BOSS HUD ═══════════════════════ -->
+  <div id="boss-hud" class="boss-hud hidden">
+    <div class="boss-name">EL ESPECTADOR DE SUCESOS</div>
+    <div class="boss-hp-bar">
+      <div id="boss-hp-fill" class="boss-hp-fill" style="width: 100%"></div>
     </div>
   </div>
 
@@ -197,6 +258,7 @@
           <button class="tool-btn" data-tool="Tank">🛡️ Tank</button>
           <button class="tool-btn" data-tool="Sprinter">💨 Sprinter</button>
           <button class="tool-btn" data-tool="Presa">🗡️ Cazador</button>
+          <button class="tool-btn" data-tool="Boss">👑 Boss</button>
           <button class="tool-btn" data-tool="Eraser">🧹 Borrar</button>
         </div>
         <div class="shop-section-title" style="margin-top:1rem;">Velocidad</div>
@@ -206,6 +268,29 @@
       <div class="sidebar-footer">
         <button id="btn-run-simulation" class="apply-btn">▶ Iniciar</button>
         <button id="btn-pause-simulation" class="apply-btn" style="background:rgba(30,30,30,0.9);margin-top:0.5rem;display:none;">⏸ Pausar</button>
+      </div>
+    </div>
+
+    <!-- Playable Sandbox Sidebar -->
+    <div id="psb-sidebar" class="sidebar hidden">
+      <div class="sidebar-header">
+        <h2>🛠️ Sandbox Jugable</h2>
+        <button id="close-psb-sidebar" class="close-btn">&times;</button>
+      </div>
+      <div class="sidebar-content">
+        <div class="shop-section-title">Herramientas (Click en mapa)</div>
+        <div class="tool-grid">
+          <button class="tool-btn active" data-psb-tool="PlayerStart">🔵 Tu Inicio</button>
+          <button class="tool-btn" data-psb-tool="Obstaculo">🪨 Obstáculo</button>
+          <button class="tool-btn" data-psb-tool="Enemigo">👹 Bestia</button>
+          <button class="tool-btn" data-psb-tool="Tank">🛡️ Tank</button>
+          <button class="tool-btn" data-psb-tool="Sprinter">💨 Sprinter</button>
+          <button class="tool-btn" data-psb-tool="Boss">👑 Boss</button>
+          <button class="tool-btn" data-psb-tool="Eraser">🧹 Borrar</button>
+        </div>
+      </div>
+      <div class="sidebar-footer">
+        <button id="btn-run-psb" class="apply-btn">▶ Jugar</button>
       </div>
     </div>
 
@@ -221,6 +306,8 @@
         <button class="shop-btn" id="shop-btn-hp">❤️ Vida +30% <span class="cost" id="cost-hp">?g</span></button>
         <button class="shop-btn" id="shop-btn-dmg">⚔️ Daño +20% <span class="cost" id="cost-dmg">?g</span></button>
         <button class="shop-btn" id="shop-btn-spd">⚡ Velocidad +15% <span class="cost" id="cost-spd">?g</span></button>
+        <button class="shop-btn" id="shop-btn-gold">💰 Oro +20% <span class="cost" id="cost-gold">?g</span></button>
+        <button class="shop-btn" id="shop-btn-exp">🌟 XP +20% <span class="cost" id="cost-exp">?g</span></button>
 
         <div class="shop-section-title" style="margin-top:0.5rem;">OBJETOS</div>
         <button class="shop-btn" id="shop-btn-potion">🧪 Poción <span class="cost">60g</span></button>
@@ -250,8 +337,8 @@
             </div>
             <div class="stat"><span class="label">Oleada</span><span id="wave-num" class="value">0</span></div>
             <div class="stat"><span class="label">Enemies</span><span id="wave-enemies" class="value">0</span></div>
-            <div class="stat"><span class="label">Kills</span><span id="wave-kills" class="value">0</span></div>
-            <div class="stat"><span class="label">Oro</span><span id="wave-gold-hud" class="value" style="color:#d4af37">0</span></div>
+            <div class="hud-item"><span id="hud-kills">0</span></div>
+            <div class="hud-item"><span id="hud-gold" class="value" style="color:#d4af37">0</span></div>
             <div class="stat"><span class="label">Tiempo</span><span id="wave-time" class="value">0s</span></div>
             <div class="skill-cooldown-wrap" id="skill-wrap">
               <div class="skill-btn-label">[E] <span id="skill-name">Skill</span></div>

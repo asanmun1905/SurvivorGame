@@ -2,8 +2,9 @@ import { Entidad } from '../entities/Entidad';
 import bgImgUrl from '../../assets/Background/background.png';
 import maloImgUrl from '../../assets/MaloMelee/IdleFront-removebg-preview.png';
 import malo2ImgUrl from '../../assets/MaloRango/Necromancer_creativekind-Sheet.png';
-import buenoImgUrl from '../../assets/BuenoMelee/Sprites/IDLE/idle_down.png';
+import buenoImgUrl from '../../assets/BuenoMelee/Sprites/IdleFront.png';
 import obsImgUrl from '../../assets/Obstacle/82cfbcc1-c0ad-4c07-91ae-ca682d039cb1_unnamed_1_-removebg-preview.png';
+import bossImgUrl from '../../assets/bosses/WhatsApp_Image_2026-03-15_at_13.38.28-removebg-preview.png';
 
 /**
  * Clase responsable del renderizado visual y de la gestión lógica de la rejilla del tablero.
@@ -34,7 +35,8 @@ export class Tablero {
             'malo': maloImgUrl,
             'malo2': malo2ImgUrl,
             'bueno': buenoImgUrl,
-            'obstaculo': obsImgUrl
+            'obstaculo': obsImgUrl,
+            'boss': bossImgUrl
         };
 
         for (const [key, path] of Object.entries(paths)) {

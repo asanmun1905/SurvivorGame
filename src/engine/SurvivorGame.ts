@@ -7,6 +7,7 @@ import { Sprinter } from '../entities/Sprinter';
 import { Tablero } from './Tablero';
 import { Posicion } from '../utils/Posicion';
 import { MovimientoInteligente } from '../logic/MovimientoInteligente';
+import { BossEntity } from '../entities/BossEntity';
 
 export class SurvivorGame {
     private tablero: Tablero;
@@ -58,7 +59,7 @@ export class SurvivorGame {
         if (index !== -1) {
             const ent = this.entidades[index];
             this.entidades.splice(index, 1);
-            if (ent instanceof Enemigo || ent instanceof Tank || ent instanceof Sprinter) {
+            if (ent instanceof Enemigo || ent instanceof Tank || ent instanceof Sprinter || ent instanceof BossEntity) {
                 this.enemigos = this.enemigos.filter(e => e !== ent);
             } else if (ent instanceof Presa) {
                 this.presas = this.presas.filter(p => p !== ent);
@@ -66,7 +67,7 @@ export class SurvivorGame {
         }
     }
 
-    public addEntityAt(type: 'Obstaculo' | 'Enemigo' | 'Presa' | 'Tank' | 'Sprinter', x: number, y: number): void {
+    public addEntityAt(type: 'Obstaculo' | 'Enemigo' | 'Presa' | 'Tank' | 'Sprinter' | 'Boss', x: number, y: number): void {
         this.clearEntityAt(x, y);
         if (x < 0 || x >= this.tablero.getAncho() || y < 0 || y >= this.tablero.getAlto()) return;
 
@@ -90,6 +91,10 @@ export class SurvivorGame {
             p.setEstrategia(new MovimientoInteligente());
             this.presas.push(p);
             this.entidades.push(p);
+        } else if (type === 'Boss') {
+            const b = new BossEntity(x, y);
+            this.enemigos.push(b as any);
+            this.entidades.push(b);
         }
     }
 

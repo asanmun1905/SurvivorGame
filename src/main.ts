@@ -1,7 +1,8 @@
 import './style.css';
 import { SurvivorGame } from './engine/SurvivorGame';
-import { WaveGame, type ClaseWave } from './engine/WaveGame';
+import { WaveGame, CLASES_STATS, type ClaseWave } from './engine/WaveGame';
 import { BulletHell } from './engine/BulletHell';
+import { PlayableSandbox } from './engine/PlayableSandbox';
 import bgImgUrl from '../assets/Background/background.png';
 
 /** ─────────────────── DOM ─────────────────── */
@@ -23,6 +24,25 @@ const DOM = {
     btnCloseSettings: get('close-settings') as HTMLButtonElement,
     btnSaveSettings: get('save-settings') as HTMLButtonElement,
 
+    // ── Sandbox Choice Overlay
+    sandboxChoiceOverlay: get('sandbox-choice-overlay'),
+    btnChoiceSim: get('btn-choice-sim'),
+    btnChoiceJugable: get('btn-choice-jugable'),
+    btnBackFromChoice: get('btn-back-from-choice') as HTMLButtonElement,
+
+    // ── Sandbox Jugable Menu
+    psbSetupOverlay: get('psb-setup-overlay'),
+    btnClosePsbSetup: get('close-psb-setup') as HTMLButtonElement,
+    btnPsbToGrid: get('btn-psb-to-grid') as HTMLButtonElement,
+    inputPsbHp: get('input-psb-hp') as HTMLInputElement,
+    inputPsbDmg: get('input-psb-dmg') as HTMLInputElement,
+    inputPsbAncho: get('input-psb-ancho') as HTMLInputElement,
+    inputPsbAlto: get('input-psb-alto') as HTMLInputElement,
+    psbClassSelection: get('psb-class-selection'),
+    psbSidebar: get('psb-sidebar'),
+    btnClosePsbSidebar: get('close-psb-sidebar') as HTMLButtonElement,
+    btnRunPsb: get('btn-run-psb') as HTMLButtonElement,
+
     // ── Class select
     classSelectOverlay: get('class-select-overlay'),
     btnBackFromClass: get('btn-back-from-class') as HTMLButtonElement,
@@ -43,11 +63,15 @@ const DOM = {
     wbtnHp: get('wbtn-hp') as HTMLButtonElement,
     wbtnDmg: get('wbtn-dmg') as HTMLButtonElement,
     wbtnSpd: get('wbtn-spd') as HTMLButtonElement,
+    wbtnGold: get('wbtn-gold') as HTMLButtonElement,
+    wbtnExp: get('wbtn-exp') as HTMLButtonElement,
     wbtnPotion: get('wbtn-potion') as HTMLButtonElement,
     wbtnShield: get('wbtn-shield') as HTMLButtonElement,
     wcostHp: get('wcost-hp'),
     wcostDmg: get('wcost-dmg'),
     wcostSpd: get('wcost-spd'),
+    wcostGold: get('wcost-gold'),
+    wcostExp: get('wcost-exp'),
 
     // ── Status banner
     statusBanner: get('status-banner'),
@@ -71,11 +95,15 @@ const DOM = {
     shopBtnHp: get('shop-btn-hp') as HTMLButtonElement,
     shopBtnDmg: get('shop-btn-dmg') as HTMLButtonElement,
     shopBtnSpd: get('shop-btn-spd') as HTMLButtonElement,
+    shopBtnGold: get('shop-btn-gold') as HTMLButtonElement,
+    shopBtnExp: get('shop-btn-exp') as HTMLButtonElement,
     shopBtnPotion: get('shop-btn-potion') as HTMLButtonElement,
     shopBtnShield: get('shop-btn-shield') as HTMLButtonElement,
     costHp: get('cost-hp'),
     costDmg: get('cost-dmg'),
     costSpd: get('cost-spd'),
+    costGold: get('cost-gold'),
+    costExp: get('cost-exp'),
 
     // ── Sim HUD
     turnCount: get('turn-count'),
@@ -91,10 +119,10 @@ const DOM = {
     waveHpFill: get('wave-hp-fill'),
     waveNum: get('wave-num'),
     waveEnemies: get('wave-enemies'),
-    waveKills: get('wave-kills'),
-    waveGoldHud: get('wave-gold-hud'),
+    waveKills: get('hud-kills'),
+    waveGoldHud: get('hud-gold'),
     waveTime: get('wave-time'),
-    skillWrap: get('skill-wrap'),
+    skillWrap: document.querySelector('.skill-cooldown-wrap') as HTMLElement,
     skillName: get('skill-name'),
     skillCdFill: get('skill-cd-fill'),
     skillReady: get('skill-ready'),
@@ -121,6 +149,9 @@ const DOM = {
     inputPresas: get('input-presas') as HTMLInputElement,
     inputVelocidad: get('input-velocidad') as HTMLInputElement,
     valVelocidad: get('val-velocidad'),
+    // Boss HUD
+    bossHud: get('boss-hud'),
+    bossHpFill: get('boss-hp-fill'),
     inputBrightness: get('input-brightness') as HTMLInputElement,
 };
 
@@ -128,22 +159,24 @@ const ctx = DOM.canvas.getContext('2d')!;
 const CELL_SIZE = 80;
 
 /** ─────────────────── STATE ─────────────────── */
-type GameMode = 'sim' | 'oleadas' | 'bullethell';
+type GameMode = 'sim' | 'oleadas' | 'bullethell' | 'sandbox-jugable';
 
 let gameMode: GameMode = 'sim';
 let simGame: SurvivorGame | null = null;
 let waveMotor: WaveGame | null = null;
 let bhMotor: BulletHell | null = null;
+let psbMotor: PlayableSandbox | null = null;
 let simRunning = false;
-let currentTool: 'Obstaculo' | 'Enemigo' | 'Tank' | 'Sprinter' | 'Presa' | 'Eraser' = 'Obstaculo';
+let currentTool: 'Obstaculo' | 'Enemigo' | 'Tank' | 'Sprinter' | 'Presa' | 'Eraser' | 'Boss' = 'Obstaculo';
+let psbCurrentTool: string = 'PlayerStart';
 let isPainting = false;
+let psbSelectedClass: ClaseWave = 'guerrero';
 let turns = 0;
 
 // Map class to skill name
 const SKILL_NAMES: Record<ClaseWave, string> = {
     guerrero: 'Golpe Sísmico',
-    arquero: 'Flecha Colosal',
-    explorador: 'Esquivar'
+    arquero: 'Flecha Colosal'
 };
 
 /** ─────────────────── HELPERS ─────────────────── */
@@ -175,15 +208,18 @@ function stopAllEngines() {
     simGame?.getTablero().detenerRenderLoop();
     waveMotor?.stop();
     bhMotor?.stop();
+    psbMotor?.stop();
     simGame = null;
     waveMotor = null;
     bhMotor = null;
+    psbMotor = null;
     simRunning = false;
 }
 
 function hideSidebars() {
     DOM.simSidebar.classList.add('hidden');
     DOM.oleadasSidebar.classList.add('hidden');
+    DOM.psbSidebar.classList.add('hidden');
     DOM.btnToggleSimSidebar.classList.add('hidden');
     DOM.btnToggleOleadasShop.classList.add('hidden');
     DOM.app.style.paddingRight = '0';
@@ -196,6 +232,7 @@ function enterGameScreen() {
     DOM.waveEndOverlay.classList.add('hidden');
     DOM.bhHud.classList.add('hidden');
     DOM.waveHud.classList.add('hidden');
+    DOM.bossHud.classList.add('hidden');
     DOM.hudCazadores.classList.remove('hidden');
     DOM.hudBestias.classList.remove('hidden');
     DOM.hudTurno.classList.remove('hidden');
@@ -229,11 +266,13 @@ function refreshShopCosts() {
     DOM.costHp.textContent = `${c.hp}g`;    DOM.wcostHp.textContent = `${c.hp}g`;
     DOM.costDmg.textContent = `${c.damage}g`; DOM.wcostDmg.textContent = `${c.damage}g`;
     DOM.costSpd.textContent = `${c.speed}g`;  DOM.wcostSpd.textContent = `${c.speed}g`;
+    DOM.costGold.textContent = `${c.gold}g`;  DOM.wcostGold.textContent = `${c.gold}g`;
+    DOM.costExp.textContent = `${c.exp}g`;    DOM.wcostExp.textContent = `${c.exp}g`;
 }
 
 function updateWaveGold(g: number) {
     DOM.oleadasGold.textContent = g.toString();
-    DOM.waveGoldHud.textContent = `${g}g`;
+    DOM.waveGoldHud.textContent = g.toString();
     DOM.waveEndGoldDisplay.textContent = g.toString();
 }
 
@@ -290,7 +329,97 @@ async function iniciarSimulacionRun() {
     showEndScreen(msg);
 }
 
-/** ─────────────────── MODE: OLEADAS (Real-time action) ─────────────────── */
+/** ─────────────────── MODE: SANDBOX JUGABLE ─────────────────── */
+function openPsbSetup() {
+    stopAllEngines();
+    // Populate class selection for PSB if not already
+    if (DOM.psbClassSelection.innerHTML.trim() === '') {
+        DOM.psbClassSelection.innerHTML = `
+            <div class="class-card active" data-psbclase="guerrero" style="transform:none; cursor:pointer;">
+                <div class="class-icon">⚔️</div>
+                <h3>Guerrero</h3>
+            </div>
+            <div class="class-card" data-psbclase="arquero" style="transform:none; cursor:pointer;">
+                <div class="class-icon">🏹</div>
+                <h3>Arquero</h3>
+            </div>
+        `;
+        document.querySelectorAll<HTMLElement>('[data-psbclase]').forEach(c => {
+            c.onclick = () => {
+                document.querySelectorAll('[data-psbclase]').forEach(cc => cc.classList.remove('active'));
+                c.classList.add('active');
+                psbSelectedClass = c.dataset.psbclase as ClaseWave;
+            };
+        });
+    }
+    DOM.psbSetupOverlay.classList.remove('hidden');
+}
+
+function arrancarPlayableSandboxGrid() {
+    gameMode = 'sandbox-jugable';
+    enterGameScreen();
+    DOM.hudTurno.classList.add('hidden');
+    DOM.hudCazadores.classList.add('hidden');
+    DOM.hudBestias.classList.add('hidden');
+    DOM.psbSidebar.classList.remove('hidden');
+    DOM.app.style.paddingRight = '260px';
+
+    const cw = Math.max(10, parseInt(DOM.inputPsbAncho.value) || 20) * 60;
+    const ch = Math.max(10, parseInt(DOM.inputPsbAlto.value) || 12) * 60;
+    setCanvasSize(cw, ch);
+
+    psbMotor = new PlayableSandbox(DOM.canvas, {
+        onHpChange: (hp, max) => {
+             const pct = Math.max(0, (hp / max) * 100);
+             DOM.waveHpText.textContent = `${Math.max(0, Math.floor(hp))}/${max}`;
+             DOM.waveHpFill.style.width = `${pct}%`;
+             DOM.waveHpFill.className = 'wave-hp-fill' + (pct < 25 ? ' low' : pct < 50 ? ' mid' : '');
+        },
+        onKillsChange: (k) => { DOM.waveKills.textContent = k.toString(); },
+        onEnemiesChange: (n) => { DOM.waveEnemies.textContent = n.toString(); },
+        onGameOver: (kills) => { showEndScreen(`FIN DEL SANDBOX (Kills: ${kills})`); },
+        onSkillCooldown: (_ready, pct) => {
+             DOM.skillCdFill.style.width = `${(pct) * 100}%`;
+             if (pct <= 0) DOM.skillReady.classList.remove('hidden');
+             else DOM.skillReady.classList.add('hidden');
+        },
+        onBossHpChange: (hp, max, visible) => {
+             if (visible) {
+                  DOM.bossHud.classList.remove('hidden');
+                  const pct = Math.max(0, (hp / max) * 100);
+                  DOM.bossHpFill.style.width = `${pct}%`;
+             } else {
+                  DOM.bossHud.classList.add('hidden');
+             }
+        }
+    });
+
+    psbMotor.setCellSize(60);
+    psbMotor.drawSetup();
+}
+
+function iniciarPlayableSandboxRutina() {
+    if (!psbMotor || gameMode !== 'sandbox-jugable') return;
+    DOM.psbSidebar.classList.add('hidden');
+    DOM.app.style.paddingRight = '0';
+    DOM.waveHud.classList.remove('hidden');
+    DOM.skillName.textContent = SKILL_NAMES[psbSelectedClass];
+    DOM.waveKills.textContent = '0';
+    // hide unneeded elements in waveHud for sandbox
+    get('hud-gold').style.display = 'none';
+    get('wave-num').parentElement!.style.display = 'none';
+    get('wave-time').parentElement!.style.display = 'none';
+    
+    const claseBaseStats = CLASES_STATS[psbSelectedClass];
+    const bonusHp = parseInt(DOM.inputPsbHp.value) || 0;
+    const bonusDmg = parseInt(DOM.inputPsbDmg.value) || 0;
+    psbMotor.startPlayPhase({
+         clase: psbSelectedClass,
+         hp: claseBaseStats.hp + bonusHp,
+         damage: claseBaseStats.damage + bonusDmg,
+         speed: claseBaseStats.speed, x: 0, y: 0
+    });
+}
 function arrancarOleadas(clase: ClaseWave) {
     gameMode = 'oleadas';
     enterGameScreen();
@@ -327,15 +456,15 @@ function arrancarOleadas(clase: ClaseWave) {
         },
         onKillsChange: (k) => { DOM.waveKills.textContent = k.toString(); },
         onGoldChange: (g) => { updateWaveGold(g); refreshShopCosts(); },
-        onTimeChange: (t) => { DOM.waveTime.textContent = `${Math.floor(t)}s`; },
+        onTimeChange: (t) => { DOM.waveTime.textContent = Math.floor(t).toString(); },
         onEnemiesChange: (n) => { DOM.waveEnemies.textContent = n.toString(); },
-        onGameOver: (kills, oleada) => {
-            showEndScreen(`CAÍSTE EN LA OLEADA ${oleada} CON ${kills} BAJAS.`);
+        onGameOver: (kills) => {
+            showEndScreen(`LAS BESTIAS HAN GANADO (Kills: ${kills})`);
         },
-        onWaveEnd: (oleada, gold) => {
+        onWaveEnd: (_oleada, gold) => {
             // Show the inter-wave shop overlay
             DOM.waveEndIcon.textContent = '🏆';
-            DOM.waveEndTitle.textContent = `Oleada ${oleada} completada`;
+            DOM.waveEndTitle.textContent = `La caza ha sido completada`;
             DOM.waveEndDesc.textContent = 'Gasta tu oro antes de la siguiente oleada.';
             DOM.waveEndGoldDisplay.textContent = gold.toString();
             refreshShopCosts();
@@ -349,7 +478,23 @@ function arrancarOleadas(clase: ClaseWave) {
                 DOM.skillReady.classList.add('hidden');
             }
         },
-        onStatusMsg: (msg) => showBanner(msg),
+        onStatusMsg: (msg) => {
+            DOM.statusBanner.textContent = msg;
+            DOM.statusBanner.classList.remove('hidden');
+            // Re-trigger animation by removing/adding
+            DOM.statusBanner.style.animation = 'none';
+            void DOM.statusBanner.offsetHeight;
+            DOM.statusBanner.style.animation = '';
+        },
+        onBossHpChange: (hp, max, visible) => {
+            if (visible) {
+                DOM.bossHud.classList.remove('hidden');
+                const pct = Math.max(0, (hp / max) * 100);
+                DOM.bossHpFill.style.width = `${pct}%`;
+            } else {
+                DOM.bossHud.classList.add('hidden');
+            }
+        }
     });
 
     refreshShopCosts();
@@ -392,36 +537,52 @@ function buildLifeIcons(current: number, max: number) {
     }
 }
 
-/** ─────────────────── PAINTING (SIM) ─────────────────── */
+/** ─────────────────── PAINTING (SIM / PSB) ─────────────────── */
 function paintAt(e: MouseEvent) {
-    if (!simGame || simRunning) return;
     const rect = DOM.canvas.getBoundingClientRect();
     const scaleX = DOM.canvas.width / rect.width;
     const scaleY = DOM.canvas.height / rect.height;
-    const gx = Math.floor(((e.clientX - rect.left) * scaleX) / CELL_SIZE);
-    const gy = Math.floor(((e.clientY - rect.top) * scaleY) / CELL_SIZE);
+    const gx = Math.floor(((e.clientX - rect.left) * scaleX) / (gameMode === 'sim' ? CELL_SIZE : 60));
+    const gy = Math.floor(((e.clientY - rect.top) * scaleY) / (gameMode === 'sim' ? CELL_SIZE : 60));
 
-    if (currentTool === 'Eraser') simGame.clearEntityAt(gx, gy);
-    else simGame.addEntityAt(currentTool, gx, gy);
-
-    DOM.presaCount.textContent = simGame.getContadorPresas().toString();
-    DOM.enemigoCount.textContent = simGame.getContadorEnemigos().toString();
+    if (gameMode === 'sim') {
+        if (!simGame || simRunning) return;
+        if (currentTool === 'Eraser') simGame.clearEntityAt(gx, gy);
+        else simGame.addEntityAt(currentTool, gx, gy);
+        DOM.presaCount.textContent = simGame.getContadorPresas().toString();
+        DOM.enemigoCount.textContent = simGame.getContadorEnemigos().toString();
+    } else if (gameMode as string === 'sandbox-jugable') {
+        if (!psbMotor) return;
+        if (psbCurrentTool === 'Eraser') psbMotor.removeEntityGrid(gx, gy);
+        else psbMotor.addEntityGrid(psbCurrentTool, gx, gy);
+    }
 }
 
 /** ─────────────────── EVENT BINDINGS ─────────────────── */
 
 // Main menu
-DOM.btnStart.onclick = () => arrancarSimulacion();
+DOM.btnStart.onclick = () => DOM.sandboxChoiceOverlay.classList.remove('hidden');
 DOM.btnOleadas.onclick = () => { stopAllEngines(); DOM.classSelectOverlay.classList.remove('hidden'); };
 DOM.btnBulletHell.onclick = () => { stopAllEngines(); DOM.bhDiffOverlay.classList.remove('hidden'); };
+
+// Sandbox Choice
+DOM.btnChoiceSim.onclick = () => {
+    DOM.sandboxChoiceOverlay.classList.add('hidden');
+    arrancarSimulacion();
+};
+DOM.btnChoiceJugable.onclick = () => {
+    DOM.sandboxChoiceOverlay.classList.add('hidden');
+    openPsbSetup();
+};
+DOM.btnBackFromChoice.onclick = () => DOM.sandboxChoiceOverlay.classList.add('hidden');
 
 // Settings
 DOM.btnSettings.onclick = () => DOM.settingsOverlay.classList.remove('hidden');
 DOM.btnCloseSettings.onclick = () => DOM.settingsOverlay.classList.add('hidden');
 DOM.btnSaveSettings.onclick = () => DOM.settingsOverlay.classList.add('hidden');
 
-// Class select
-document.querySelectorAll<HTMLElement>('.class-card').forEach(card => {
+// Class select (only in class-select-overlay)
+document.querySelectorAll<HTMLElement>('#class-select-overlay .class-card').forEach(card => {
     card.onclick = () => {
         const clase = card.dataset.clase as ClaseWave;
         if (!clase) return;
@@ -466,6 +627,24 @@ DOM.btnPauseSimulation.onclick = () => {
     DOM.btnPauseSimulation.style.display = 'none';
 };
 
+// PSB sidebar & setup
+DOM.btnClosePsbSetup.onclick = () => DOM.psbSetupOverlay.classList.add('hidden');
+DOM.btnPsbToGrid.onclick = () => {
+     DOM.psbSetupOverlay.classList.add('hidden');
+     arrancarPlayableSandboxGrid();
+};
+DOM.btnClosePsbSidebar.onclick = () => { DOM.psbSidebar.classList.add('hidden'); DOM.app.style.paddingRight = '0'; };
+DOM.btnRunPsb.onclick = () => iniciarPlayableSandboxRutina();
+
+// PSB Tool selection
+document.querySelectorAll<HTMLElement>('#psb-sidebar [data-psb-tool]').forEach(btn => {
+    btn.onclick = () => {
+        document.querySelectorAll('[data-psb-tool]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        psbCurrentTool = btn.dataset.psbTool as string;
+    };
+});
+
 // Wave shop sidebar toggle
 DOM.btnToggleOleadasShop.onclick = () => {
     const hidden = DOM.oleadasSidebar.classList.toggle('hidden');
@@ -482,6 +661,8 @@ const shopAction = (fn: () => boolean) => {
 DOM.shopBtnHp.onclick = () => shopAction(() => waveMotor!.upgradeHp());
 DOM.shopBtnDmg.onclick = () => shopAction(() => waveMotor!.upgradeDamage());
 DOM.shopBtnSpd.onclick = () => shopAction(() => waveMotor!.upgradeSpeed());
+DOM.shopBtnGold.onclick = () => shopAction(() => waveMotor!.upgradeGoldGain());
+DOM.shopBtnExp.onclick = () => shopAction(() => waveMotor!.upgradeExpGain());
 DOM.shopBtnPotion.onclick = () => shopAction(() => waveMotor!.buyPotion());
 DOM.shopBtnShield.onclick = () => shopAction(() => waveMotor!.buyShield());
 
@@ -495,6 +676,8 @@ const waveShopAction = (fn: () => boolean) => {
 DOM.wbtnHp.onclick = () => waveShopAction(() => waveMotor!.upgradeHp());
 DOM.wbtnDmg.onclick = () => waveShopAction(() => waveMotor!.upgradeDamage());
 DOM.wbtnSpd.onclick = () => waveShopAction(() => waveMotor!.upgradeSpeed());
+DOM.wbtnGold.onclick = () => waveShopAction(() => waveMotor!.upgradeGoldGain());
+DOM.wbtnExp.onclick = () => waveShopAction(() => waveMotor!.upgradeExpGain());
 DOM.wbtnPotion.onclick = () => waveShopAction(() => waveMotor!.buyPotion());
 DOM.wbtnShield.onclick = () => waveShopAction(() => waveMotor!.buyShield());
 
@@ -518,20 +701,34 @@ DOM.inputBrightness.oninput = () => {
     document.documentElement.style.setProperty('--brightness', DOM.inputBrightness.value);
 };
 
-// Tool selection
-document.querySelectorAll<HTMLElement>('.tool-btn').forEach(btn => {
+// Tool selection (sim sidebar only)
+document.querySelectorAll<HTMLElement>('#sim-sidebar .tool-btn').forEach(btn => {
     btn.onclick = () => {
-        document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('#sim-sidebar .tool-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentTool = btn.dataset.tool as typeof currentTool;
     };
 });
 
-// Canvas painting (sim only)
+// Canvas painting (sim & psb)
 DOM.canvas.addEventListener('mousedown', (e) => {
-    if (gameMode !== 'sim' || !simGame || simRunning) return;
-    isPainting = true;
-    paintAt(e);
+    if (gameMode === 'sim') {
+        if (!simGame || simRunning) return;
+        isPainting = true;
+        paintAt(e);
+    } else if (gameMode as string === 'sandbox-jugable') {
+        if (!psbMotor || (psbMotor as any).mode === 'play') return;
+        isPainting = true;
+        paintAt(e);
+    }
+});
+
+DOM.canvas.addEventListener('mouseup', () => {
+    if (gameMode === 'sim' || gameMode as string === 'sandbox-jugable') isPainting = false;
+});
+
+DOM.canvas.addEventListener('mouseleave', () => {
+    if (gameMode === 'sim' || gameMode as string === 'sandbox-jugable') isPainting = false;
 });
 DOM.canvas.addEventListener('mousemove', (e) => { if (isPainting) paintAt(e); });
 window.addEventListener('mouseup', () => { isPainting = false; });
