@@ -105,6 +105,13 @@ if (this.screenShake > 0) {
 ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset
 ```
 
+### Boss Plasma Beam (Wave Mode)
+- **Visual Synthesis**: Combines multiple layers including a broad outer glow, a vibrant inner beam, and a white "hot" core.
+- **Dynamic Effects**:
+  - **Flicker**: Uses `Math.sin(time * 60)` to oscillate width rapidly.
+  - **Energy Particles**: Procedural white rectangles travel along the beam's axis to simulate fast-moving plasma.
+  - **Eye Glow**: A radial gradient at the boss's eye creates a high-intensity focal point for the attack.
+
 ---
 
 ## 6. Critical Technical Notes for AI

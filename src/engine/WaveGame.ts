@@ -98,6 +98,8 @@ const BUENO_MELEE_ASSETS = {
     ],
 };
 
+const BOSS_RAY_ASSETS = import.meta.glob('../../assets/bosses/Ray*.png', { eager: true, as: 'url' });
+
 // ─────────────────── Types ───────────────────
 export type ClaseWave = 'guerrero' | 'arquero';
 
@@ -273,6 +275,8 @@ export class WaveGame {
     private bossTargetY: number = 0;
     private bossBulletHellTimer: number = 0;
     private bossShake: number = 0;
+    private bossFrame: number = 0;
+    private bossFrameTimer: number = 0;
     private screenshake: number = 0;
 
     // Upgrades state
@@ -348,6 +352,15 @@ export class WaveGame {
             img.onload = () => this.assetsLoaded.add(k);
             this.assets.set(k, img);
         }
+
+        // Load Boss Ray animation
+        const rayKeys = Object.keys(BOSS_RAY_ASSETS).sort();
+        rayKeys.forEach((key, i) => {
+            const img = new Image();
+            img.src = (BOSS_RAY_ASSETS[key] as any);
+            img.onload = () => this.assetsLoaded.add(`boss_ray_${i}`);
+            this.assets.set(`boss_ray_${i}`, img);
+        });
         this.bossImg = this.assets.get('boss')!; // Assign bossImg from the loaded assets map
 
         // Load melee animations
@@ -666,6 +679,9 @@ export class WaveGame {
         for (const e of this.enemies) {
             const d = Math.hypot(e.x - p.x, e.y - p.y);
             if (d <= p.attackRange) {
+                // Obstacle block check
+                if (this.isObstacleBetween(p.x, p.y, e.x, e.y)) continue;
+
                 const enemyAngle = Math.atan2(e.y - p.y, e.x - p.x);
                 let diff = enemyAngle - angle;
                 while (diff > Math.PI) diff -= Math.PI * 2;
@@ -685,18 +701,21 @@ export class WaveGame {
         // Targeted attack on Boss
         if (this.bossActive) {
             const dist = Math.hypot(this.bossX - p.x, this.bossY - p.y);
-            if (dist < p.attackRange + 50) {
-                const angleToBoss = Math.atan2(this.bossY - p.y, this.bossX - p.x);
-                let diff = angleToBoss - angle;
-                while (diff > Math.PI) diff -= Math.PI * 2;
-                while (diff < -Math.PI) diff += Math.PI * 2;
-                if (Math.abs(diff) < coneWidth / 2) {
-                    const dmg = p.damage * p.dmgBoost;
-                    this.bossHp -= dmg;
-                    this.bossShake = 2; // Trigger boss shake
-                    this.callbacks.onBossHpChange(this.bossHp, this.bossMaxHp, true);
-                    this.spawnDamageNumber(this.bossX, this.bossY - 30, Math.round(dmg), '#ef4444');
-                    if (this.bossHp <= 0) this.onBossDeath();
+            // Increased boss hitbox radius to 110 (fits 180x240 sprite)
+            if (dist < p.attackRange + 110) {
+                if (!this.isObstacleBetween(p.x, p.y, this.bossX, this.bossY)) {
+                    const angleToBoss = Math.atan2(this.bossY - p.y, this.bossX - p.x);
+                    let diff = angleToBoss - angle;
+                    while (diff > Math.PI) diff -= Math.PI * 2;
+                    while (diff < -Math.PI) diff += Math.PI * 2;
+                    if (Math.abs(diff) < coneWidth / 2) {
+                        const dmg = p.damage * p.dmgBoost;
+                        this.bossHp -= dmg;
+                        this.bossShake = 2; // Trigger boss shake
+                        this.callbacks.onBossHpChange(this.bossHp, this.bossMaxHp, true);
+                        this.spawnDamageNumber(this.bossX, this.bossY - 30, Math.round(dmg), '#ef4444');
+                        if (this.bossHp <= 0) this.onBossDeath();
+                    }
                 }
             }
         }
@@ -711,7 +730,8 @@ export class WaveGame {
 
         if (this.bossActive) {
             const dist = Math.hypot(this.bossX - p.x, this.bossY - p.y);
-            if (dist < p.attackRange + 50) {
+            // Increased boss hitbox radius to 110
+            if (dist < p.attackRange + 110) {
                 const angleToBoss = Math.atan2(this.bossY - p.y, this.bossX - p.x);
                 this.projectiles.push({
                     x: p.x, y: p.y,
@@ -913,6 +933,24 @@ export class WaveGame {
         return false;
     }
 
+    private isObstacleBetween(x1: number, y1: number, x2: number, y2: number): boolean {
+        for (const obs of this.obstacles) {
+            // Check distance from obstacle center to line segment (x1,y1)-(x2,y2)
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const lenSq = dx * dx + dy * dy;
+            if (lenSq === 0) continue;
+
+            const t = Math.max(0, Math.min(1, ((obs.x - x1) * dx + (obs.y - y1) * dy) / lenSq));
+            const projX = x1 + t * dx;
+            const projY = y1 + t * dy;
+            const dist = Math.hypot(obs.x - projX, obs.y - projY);
+
+            if (dist < obs.radius) return true;
+        }
+        return false;
+    }
+
     private updateAoEEffects(dt: number): void {
         for (const a of this.aoeEffects) {
             a.life -= dt;
@@ -927,6 +965,11 @@ export class WaveGame {
             proj.x += proj.vx * spd * dt;
             proj.y += proj.vy * spd * dt;
             proj.life -= dt;
+
+            // Projectiles from player block on obstacles
+            if (proj.fromPlayer && this.checkObstacleCollision(proj.x, proj.y, proj.radius)) {
+                proj.life = 0;
+            }
         }
 
         const projToRemove = new Set<Projectile>();
@@ -938,7 +981,8 @@ export class WaveGame {
             for (const e of this.enemies) {
                 if (enemiesToRemove.has(e.id)) continue;
                 const d = Math.hypot(proj.x - e.x, proj.y - e.y);
-                if (d < 16 + proj.radius) {
+                const eRadius = e.isTank ? 40 : 25;
+                if (d < eRadius + proj.radius) {
                     e.hp -= proj.damage;
                     e.hitFlash = 0.2;
                     this.spawnDamageNumber(e.x, e.y - 10, Math.round(proj.damage), '#fde047');
@@ -955,6 +999,18 @@ export class WaveGame {
                         this.spawnDamageNumber(e.x, e.y - 30, gold, '#22c55e');
                     }
                     break;
+                }
+            }
+            // Check projectile -> Boss hit
+            if (this.bossActive && !projToRemove.has(proj)) {
+                const d = Math.hypot(proj.x - this.bossX, proj.y - this.bossY);
+                if (d < 110 + proj.radius) {
+                    this.bossHp -= proj.damage;
+                    this.bossShake = 2;
+                    this.callbacks.onBossHpChange(this.bossHp, this.bossMaxHp, true);
+                    this.spawnDamageNumber(this.bossX, this.bossY - 30, Math.round(proj.damage), '#fde047');
+                    projToRemove.add(proj);
+                    if (this.bossHp <= 0) this.onBossDeath();
                 }
             }
         }
@@ -1432,18 +1488,55 @@ export class WaveGame {
             this.ctx.translate(this.bossX, this.bossY);
             this.ctx.rotate(this.bossBeamAngle);
             
-            const gradient = this.ctx.createLinearGradient(0, -20, 0, 20);
-            gradient.addColorStop(0, 'rgba(239, 68, 68, 0)');
-            gradient.addColorStop(0.5, 'rgba(239, 68, 68, 0.8)');
-            gradient.addColorStop(1, 'rgba(239, 68, 68, 0)');
+            const time = performance.now() / 1000;
+            const flicker = Math.sin(time * 60) * 5 + Math.random() * 10;
+            const baseWidth = 60 + flicker;
             
-            this.ctx.fillStyle = gradient;
-            this.ctx.fillRect(0, -40, 2000, 80); // Massive beam
+            // Ray Sprite Animation
+            const imgKey = `boss_ray_${this.bossFrame}`;
+            const rayImg = this.assets.get(imgKey);
+            if (rayImg && this.assetsLoaded.has(imgKey)) {
+                const rayW = 2000;
+                const rayH = baseWidth * 2.5;
+                this.ctx.drawImage(rayImg, 0, -rayH/2, rayW, rayH);
+            }
+
+            // Outer glow
+            const gradOuter = this.ctx.createLinearGradient(0, -baseWidth, 0, baseWidth);
+            gradOuter.addColorStop(0, 'rgba(239, 68, 68, 0)');
+            gradOuter.addColorStop(0.5, 'rgba(239, 68, 68, 0.4)');
+            gradOuter.addColorStop(1, 'rgba(239, 68, 68, 0)');
+            this.ctx.fillStyle = gradOuter;
+            this.ctx.fillRect(0, -baseWidth, 2000, baseWidth * 2);
             
-            // Core
+            // Inner vibrant beam
+            const innerWidth = baseWidth * 0.6;
+            const gradInner = this.ctx.createLinearGradient(0, -innerWidth, 0, innerWidth);
+            gradInner.addColorStop(0, 'rgba(244, 63, 94, 0)');
+            gradInner.addColorStop(0.5, 'rgba(244, 63, 94, 0.8)');
+            gradInner.addColorStop(1, 'rgba(244, 63, 94, 0)');
+            this.ctx.fillStyle = gradInner;
+            this.ctx.fillRect(0, -innerWidth, 2000, innerWidth * 2);
+
+            // Hot Core
+            const coreWidth = 8 + Math.sin(time * 40) * 4;
             this.ctx.fillStyle = '#fff';
-            this.ctx.fillRect(0, -5, 2000, 10);
-            
+            this.ctx.shadowBlur = 20;
+            this.ctx.shadowColor = '#fff';
+            this.ctx.fillRect(0, -coreWidth / 2, 2000, coreWidth);
+            this.ctx.shadowBlur = 0;
+
+            // Origin Glow (Boss Eye)
+            const eyeGlow = 40 + Math.sin(time * 30) * 10;
+            const radGrad = this.ctx.createRadialGradient(0, 0, 5, 0, 0, eyeGlow);
+            radGrad.addColorStop(0, '#fff');
+            radGrad.addColorStop(0.4, '#ef4444');
+            radGrad.addColorStop(1, 'rgba(239, 68, 68, 0)');
+            this.ctx.fillStyle = radGrad;
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, eyeGlow, 0, Math.PI * 2);
+            this.ctx.fill();
+
             this.ctx.restore();
         }
 
@@ -1526,6 +1619,12 @@ export class WaveGame {
                 this.bossBeamAngle = Math.atan2(this.player.y - this.bossY, this.player.x - this.bossX);
             }
         } else if (this.bossState === 'firing') {
+            this.bossFrameTimer += dt;
+            if (this.bossFrameTimer > 0.08) {
+                this.bossFrameTimer = 0;
+                this.bossFrame = (this.bossFrame + 1) % 8;
+            }
+
             if (this.bossTimer > 3) {
                 this.bossState = 'moving';
                 this.bossTimer = 0;
