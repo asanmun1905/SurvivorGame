@@ -36,7 +36,7 @@ const BUENO_FRAMES = {
     ]
 };
 
-export type BulletPattern = 'espiral' | 'cortina' | 'embudo' | 'aleatorio' | 'radial' | 'lluvia';
+export type BulletPattern = 'espiral' | 'cortina' | 'embudo' | 'aleatorio' | 'radial' | 'lluvia' | 'laser' | 'triple-spiral' | 'radial-wave' | 'laser-grid' | 'cross-lasers' | 'flurry' | 'splurt' | 'mega-spiral';
 
 interface Bullet {
     x: number;
@@ -317,8 +317,8 @@ export class BulletHell {
         }
 
         // Difficulty: escalates over time
-        const difficulty = 1 + Math.floor(this.elapsed / 8) * 0.6;
-        const spawnRate = Math.max(0.25, 1.8 - this.elapsed * 0.025);
+        const difficulty = 1 + Math.floor(this.elapsed / 10) * 0.5; // Slightly slower scaling
+        const spawnRate = Math.max(0.4, 2.0 - this.elapsed * 0.02); // Less dense initial spawns
 
         this.ticksSinceSpawn += dt;
         if (this.ticksSinceSpawn >= spawnRate) {
@@ -414,7 +414,13 @@ export class BulletHell {
         const h = this.canvas.height;
         const count = Math.floor(10 + difficulty * 5);
 
-        const patterns: BulletPattern[] | string[] = ['espiral', 'cortina', 'embudo', 'aleatorio', 'radial', 'lluvia', 'laser'];
+        const patterns: BulletPattern[] = ['espiral', 'cortina', 'embudo', 'aleatorio', 'radial', 'lluvia', 'laser'];
+        if (this.elapsed > 20) {
+            patterns.push('triple-spiral', 'radial-wave', 'flurry', 'splurt');
+        }
+        if (this.elapsed > 45) {
+            patterns.push('laser-grid', 'cross-lasers', 'mega-spiral');
+        }
         const pattern = patterns[Math.floor(Math.random() * patterns.length)];
 
         if (pattern === 'espiral') {
@@ -428,11 +434,10 @@ export class BulletHell {
                     x: cx, y: cy, vx, vy, 
                     radius: 12, color: '#f97316', 
                     rotation: Math.atan2(vy, vx) + Math.PI,
-                    warningTimer: 0.8
+                    warningTimer: 1.2
                 });
             }
         } else if (pattern === 'cortina') {
-            // Curtain: fall from top in a row
             const step = w / count;
             for (let i = 0; i < count; i++) {
                 const x = i * step + Math.random() * (step / 2);
@@ -486,7 +491,6 @@ export class BulletHell {
                 });
             }
         } else if (pattern === 'lluvia') {
-            // Rain: Straight down from top, high density
             for (let i = 0; i < count * 1.5; i++) {
                 const x = Math.random() * w;
                 const vx = 0;
@@ -498,10 +502,42 @@ export class BulletHell {
                     warningTimer: 0.5
                 });
             }
-        } else if (pattern === 'laser') { // Correctly integrated into the if-else if chain
-            const count = Math.floor(2 + difficulty * 0.5);
-            for (let i = 0; i < count; i++) {
-                const side = Math.floor(Math.random() * 2); // 0 horizontal, 1 vertical
+        } else if (pattern === 'triple-spiral') {
+            const cx = w / 2, cy = h / 2;
+            const spirals = 3;
+            for (let s = 0; s < spirals; s++) {
+                const offset = (s / spirals) * Math.PI * 2;
+                for (let i = 0; i < count / spirals; i++) {
+                    const angle = (i / (count / spirals)) * Math.PI * 2 + this.elapsed * 2 + offset;
+                    const spd = 3.2;
+                    const vx = Math.cos(angle) * spd;
+                    const vy = Math.sin(angle) * spd;
+                    this.bullets.push({ 
+                        x: cx, y: cy, vx, vy, 
+                        radius: 10, color: '#fca5a5', 
+                        rotation: Math.atan2(vy, vx) + Math.PI,
+                        warningTimer: 1.5
+                    });
+                }
+            }
+        } else if (pattern === 'radial-wave') {
+            const cx = w / 2, cy = h / 2;
+            for (let i = 0; i < count * 1.5; i++) {
+                const angle = (i / (count * 1.5)) * Math.PI * 2;
+                const spd = 2.5 + Math.sin(i * 0.5) * 1.0;
+                const vx = Math.cos(angle) * spd;
+                const vy = Math.sin(angle) * spd;
+                this.bullets.push({ 
+                    x: cx, y: cy, vx, vy, 
+                    radius: 9, color: '#93c5fd', 
+                    rotation: Math.atan2(vy, vx) + Math.PI,
+                    warningTimer: 1.2
+                });
+            }
+        } else if (pattern === 'laser') {
+            const lCount = Math.floor(2 + difficulty * 0.5);
+            for (let i = 0; i < lCount; i++) {
+                const side = Math.floor(Math.random() * 2);
                 if (side === 0) {
                     this.lasers.push({
                         x: 0, y: Math.random() * h,
@@ -516,6 +552,63 @@ export class BulletHell {
                     });
                 }
             }
+        } else if (pattern === 'laser-grid') {
+            const spacing = 150;
+            for (let x = spacing; x < w; x += spacing) {
+                this.lasers.push({ x, y: 0, angle: Math.PI / 2, width: 40, life: 1.5, maxLife: 1.5, isWarning: true });
+            }
+            for (let y = spacing; y < h; y += spacing) {
+                this.lasers.push({ x: 0, y, angle: 0, width: 40, life: 1.5, maxLife: 1.5, isWarning: true });
+            }
+        } else if (pattern === 'cross-lasers') {
+            this.lasers.push({ x: this.playerX, y: 0, angle: Math.PI / 2, width: 60, life: 1.5, maxLife: 1.5, isWarning: true });
+            this.lasers.push({ x: 0, y: this.playerY, angle: 0, width: 60, life: 1.5, maxLife: 1.5, isWarning: true });
+        } else if (pattern === 'flurry') {
+            const ang = Math.atan2(this.playerY - h / 2, this.playerX - w / 2);
+            for (let i = 0; i < count; i++) {
+                const spread = (Math.random() - 0.5) * 0.4;
+                const spd = 4 + Math.random() * 2;
+                this.bullets.push({
+                    x: w / 2, y: h / 2,
+                    vx: Math.cos(ang + spread) * spd,
+                    vy: Math.sin(ang + spread) * spd,
+                    radius: 10, color: '#f87171',
+                    rotation: ang + spread + Math.PI,
+                    warningTimer: 0.5
+                });
+            }
+        } else if (pattern === 'splurt') {
+            for (let i = 0; i < 5; i++) {
+                const spX = Math.random() * w;
+                const spY = Math.random() * h;
+                for (let j = 0; j < 8; j++) {
+                    const ang = (j / 8) * Math.PI * 2;
+                    this.bullets.push({
+                        x: spX, y: spY,
+                        vx: Math.cos(ang) * 3,
+                        vy: Math.sin(ang) * 3,
+                        radius: 8, color: '#fbbf24',
+                        rotation: ang + Math.PI,
+                        warningTimer: 1.0
+                    });
+                }
+            }
+        } else if (pattern === 'mega-spiral') {
+            const arms = 6;
+            for (let a = 0; a < arms; a++) {
+                const offset = (a / arms) * Math.PI * 2;
+                for (let i = 0; i < 15; i++) {
+                    const ang = offset + i * 0.2 + this.elapsed * 3;
+                    this.bullets.push({
+                        x: w / 2, y: h / 2,
+                        vx: Math.cos(ang) * 4,
+                        vy: Math.sin(ang) * 4,
+                        radius: 10, color: '#818cf8',
+                        rotation: ang + Math.PI,
+                        warningTimer: 2.0
+                    });
+                }
+            }
         } else {
             // Random scattering from one edge (aleatorio)
             const edge = Math.floor(Math.random() * 4);
@@ -524,8 +617,7 @@ export class BulletHell {
             else if (edge === 1) { ox = w; oy = Math.random() * h; }
             else if (edge === 2) { ox = Math.random() * w; oy = h; }
             else { ox = 0; oy = Math.random() * h; }
-            const cx = w / 2, cy = h / 2;
-            const baseAng = Math.atan2(cy - oy, cx - ox);
+            const baseAng = Math.atan2(h / 2 - oy, w / 2 - ox);
             for (let i = 0; i < count; i++) {
                 const ang = baseAng + (Math.random() - 0.5) * 1.5;
                 const spd = 2 + Math.random() * 2;
@@ -597,13 +689,19 @@ export class BulletHell {
                     ctx.save();
                     ctx.translate(b.x, b.y);
                     ctx.rotate(b.rotation);
+                    // Aura/Glow
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#fb923c'; // Faint orange aura
                     ctx.drawImage(img, -size / 2, -size / 2, size, size);
                     ctx.restore();
                 } else {
                     ctx.beginPath();
                     ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
                     ctx.fillStyle = b.color;
+                    ctx.shadowBlur = 12;
+                    ctx.shadowColor = b.color;
                     ctx.fill();
+                    ctx.shadowBlur = 0;
                 }
             }
         }

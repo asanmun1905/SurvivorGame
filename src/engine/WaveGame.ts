@@ -126,7 +126,7 @@ export const CLASES_STATS: Record<ClaseWave, ClaseStats> = {
     arquero: {
         nombre: 'Arquero', emoji: '🏹',
         hp: 120, speed: 200, damage: 20, attackRange: 300, attackCooldown: 0.4,
-        skill: 'Flecha Colosal', skillCooldown: 8, skillRadius: 200, color: '#22c55e'
+        skill: 'Lluvia de Flechas', skillCooldown: 8, skillRadius: 200, color: '#22c55e'
     }
 };
 
@@ -147,6 +147,10 @@ interface Enemy {
     frameTimer: number;
     detectionRadius: number;
     spottedPlayer: boolean;
+    // Status effects
+    poisonTimer?: number;
+    bleedTimer?: number;
+    marked?: boolean;
     wanderTarget: { x: number, y: number } | null;
     wanderWaitTimer: number;
     moveMode: 'horizontal' | 'up' | 'down';
@@ -167,6 +171,35 @@ export interface AoEEffect {
     startAngle?: number;
     endAngle?: number;
 }
+
+export type BuffType = 
+    'penetration' | 'bigger_area' | 'life_steal' | 'multi_attack' | 
+    'attack_speed' | 'defense' | 'critical' | 'bounce' | 
+    'bleed' | 'execute' | 'backstab' | 'poison' | 'mark';
+
+export interface BuffDef {
+    type: BuffType;
+    label: string;
+    desc: string;
+    icon: string;
+    classRestrict?: ClaseWave;
+}
+
+export const ALL_BUFFS: BuffDef[] = [
+    { type: 'penetration', label: 'Penetración', desc: 'Las flechas atraviesan enemigos.', icon: '🏹', classRestrict: 'arquero' },
+    { type: 'bigger_area', label: 'Gran Impacto', desc: 'Aumenta el área de tus ataques.', icon: '💥', classRestrict: 'guerrero' },
+    { type: 'life_steal', label: 'Robo de Vida', desc: 'Cura un % al golpear.', icon: '🧛', classRestrict: undefined },
+    { type: 'multi_attack', label: 'Multidisparo', desc: 'Dispara flechas adicionales.', icon: '🏹🏹', classRestrict: 'arquero' },
+    { type: 'attack_speed', label: 'Celeridad', desc: '+20% velocidad de ataque.', icon: '⚡', classRestrict: undefined },
+    { type: 'defense', label: 'Fortaleza', desc: '-15% daño recibido.', icon: '🛡️', classRestrict: undefined },
+    { type: 'critical', label: 'Crítico', desc: 'Probabilidad de doble daño.', icon: '🎯', classRestrict: undefined },
+    { type: 'bounce', label: 'Rebote', desc: 'Las flechas rebotan.', icon: '↩️', classRestrict: 'arquero' },
+    { type: 'bleed', label: 'Sangrado', desc: 'Daño por tiempo al golpear.', icon: '🩸', classRestrict: 'guerrero' },
+    { type: 'execute', label: 'Ejecutor', desc: 'Más daño a enemigos heridos.', icon: '💀', classRestrict: 'guerrero' },
+    { type: 'backstab', label: 'Puñalada', desc: 'Más daño por la espalda.', icon: '🗡️', classRestrict: 'guerrero' },
+    { type: 'poison', label: 'Veneno', desc: 'Envenena a tus enemigos.', icon: '🧪', classRestrict: 'arquero' },
+    { type: 'mark', label: 'Marca', desc: 'Los enemigos marcados reciben más daño.', icon: '🎯', classRestrict: 'arquero' }
+];
 
 export interface Projectile {
     x: number; y: number;
@@ -213,6 +246,22 @@ interface Player {
     expMult: number;
     exp: number;
     isMouseDown: boolean;
+    // Buffs active
+    buffs: Set<BuffType>;
+    stats: {
+        critChance: number;
+        lifeSteal: number;
+        defense: number;
+        penetration: boolean;
+        multiShot: number;
+        bounceCount: number;
+        areaMult: number;
+        bleed: boolean;
+        poison: boolean;
+        execute: boolean;
+        backstab: boolean;
+        mark: boolean;
+    };
     // Animation
     state: 'idle' | 'run' | 'attack';
     direction: number; // -1 for left, 1 for right
@@ -233,6 +282,7 @@ export interface WaveCallbacks {
     onSkillCooldown: (ready: boolean, pct: number) => void;
     onStatusMsg: (msg: string) => void;
     onBossHpChange: (hp: number, max: number, visible: boolean) => void;
+    onBuffDrop: (options: BuffDef[]) => void;
 }
 
 export class WaveGame {
@@ -411,6 +461,21 @@ export class WaveGame {
             expMult: 1,
             exp: 0,
             isMouseDown: false,
+            buffs: new Set(),
+            stats: {
+                critChance: 0,
+                lifeSteal: 0,
+                defense: 0,
+                penetration: false,
+                multiShot: 0,
+                bounceCount: 0,
+                areaMult: 1,
+                bleed: false,
+                poison: false,
+                execute: false,
+                backstab: false,
+                mark: false
+            },
             state: 'idle',
             direction: 1,
             frame: 0,
@@ -438,7 +503,7 @@ export class WaveGame {
         this.canvas.removeEventListener('mousemove', this.mouseMoveHandler);
         this.canvas.removeEventListener('mousedown', this.mouseDownHandler);
         window.removeEventListener('mouseup', this.mouseUpHandler);
-        window.removeEventListener('blur', this.mouseUpHandler);
+        window.addEventListener('blur', this.mouseUpHandler);
     }
 
     // ─────────────── Wave Management ───────────────────────────────
@@ -460,15 +525,30 @@ export class WaveGame {
     private spawnObstacles(): void {
         const count = 5 + Math.floor(this.wave / 2);
         for (let i = 0; i < count; i++) {
-            let x, y, dist;
+            let x, y, dist, radius;
+            let attempts = 0;
             do {
                 x = Math.random() * (this.W - 100) + 50;
                 y = Math.random() * (this.H - 100) + 50;
+                radius = 30 + Math.random() * 20;
                 dist = Math.hypot(x - this.player.x, y - this.player.y);
-            } while (dist < 150);
+                attempts++;
+            } while ((dist < 150 || !this.isFarFromCorners(x, y, radius)) && attempts < 100);
 
-            this.obstacles.push({ x, y, radius: 30 + Math.random() * 20 });
+            this.obstacles.push({ x, y, radius });
         }
+    }
+
+    private isFarFromCorners(x: number, y: number, radius: number): boolean {
+        const m = 150;
+        const corners = [
+            {x: 0, y: 0}, {x: this.W, y: 0},
+            {x: 0, y: this.H}, {x: this.W, y: this.H}
+        ];
+        for (const c of corners) {
+            if (Math.hypot(x - c.x, y - c.y) < m + radius + 50) return false;
+        }
+        return true;
     }
 
     private spawnEnemiesForWave(): void {
@@ -487,9 +567,10 @@ export class WaveGame {
                 const isSprinter = !isTank && i < tanks + sprinters;
                 const pos = this.getCornerSpawnPos();
 
-                const hp = isTank ? (240 + this.wave * 25) : isSprinter ? (30 + this.wave * 7) : (75 + this.wave * 12);
+                const scale = Math.pow(1.15, this.wave - 1);
+                const hp = isTank ? ((240 + this.wave * 25) * scale) : isSprinter ? ((30 + this.wave * 7) * scale) : ((75 + this.wave * 12) * scale);
                 const speed = isTank ? 45 : isSprinter ? 130 : (70 + this.wave * 4);
-                const damage = isTank ? 35 : isSprinter ? 10 : 18;
+                const damage = (isTank ? 35 : isSprinter ? 10 : 18) * scale;
                 const assetKey = isSprinter ? 'malo2' : 'malo';
 
                 this.enemies.push({
@@ -504,7 +585,7 @@ export class WaveGame {
                     direction: 1,
                     frame: 0,
                     frameTimer: 0,
-                    detectionRadius: 180 + Math.random() * 40,
+                    detectionRadius: 350 + Math.random() * 50,
                     spottedPlayer: false,
                     wanderTarget: null,
                     wanderWaitTimer: Math.random() * 2,
@@ -677,8 +758,9 @@ export class WaveGame {
         const coneWidth = Math.PI / 3; // 60 degrees
         
         for (const e of this.enemies) {
+            const range = p.attackRange * p.stats.areaMult;
             const d = Math.hypot(e.x - p.x, e.y - p.y);
-            if (d <= p.attackRange) {
+            if (d <= range) {
                 // Obstacle block check
                 if (this.isObstacleBetween(p.x, p.y, e.x, e.y)) continue;
 
@@ -688,10 +770,33 @@ export class WaveGame {
                 while (diff < -Math.PI) diff += Math.PI * 2;
 
                 if (Math.abs(diff) < coneWidth / 2) {
-                    const dmg = p.damage * p.dmgBoost;
-                    e.hp -= dmg;
+                    let dmg = p.damage * p.dmgBoost;
+                    if (Math.random() < p.stats.critChance) dmg *= 2;
+                    dmg = Math.round(dmg * 10) / 10;
+                    
+                    // Execute
+                    if (p.stats.execute && e.hp < (e.isTank ? 200 : 50)) dmg *= 1.5;
+                    dmg = Math.round(dmg * 10) / 10;
+                    // Backstab (enemy facing away from player)
+                    if (p.stats.backstab) {
+                        const playerToEnemy = Math.atan2(e.y - p.y, e.x - p.x);
+                        let angleDiff = e.direction === 1 ? playerToEnemy - 0 : playerToEnemy - Math.PI;
+                        while(angleDiff > Math.PI) angleDiff -= Math.PI*2;
+                        while(angleDiff < -Math.PI) angleDiff += Math.PI*2;
+                        if (Math.abs(angleDiff) > Math.PI / 2) dmg *= 1.4; // Hit from behind
+                    }
+                    dmg = Math.round(dmg * 10) / 10;
+
+                    e.hp = Math.round((e.hp - dmg) * 10) / 10;
                     e.hitFlash = 0.2;
+                    if (p.stats.bleed) e.bleedTimer = 3.0;
+                    
                     this.spawnDamageNumber(e.x, e.y - 10, Math.round(dmg), '#ef4444');
+                    
+                    if (p.stats.lifeSteal > 0) {
+                        p.hp = Math.min(p.maxHp, p.hp + dmg * p.stats.lifeSteal);
+                        this.callbacks.onHpChange(p.hp, p.maxHp);
+                    }
                 }
             }
         }
@@ -725,8 +830,18 @@ export class WaveGame {
 
     private performArcherAttack(): void {
         const p = this.player;
-        this.fireProjectileAt(p.x, p.y, this.mouseX, this.mouseY, p.damage * p.dmgBoost, true, 'flecha');
-        this.spawnAoE(p.x, p.y, p.attackRange, 0.2, 'rgba(34, 197, 94, 0.15)');
+        const baseAngle = Math.atan2(this.mouseY - p.y, this.mouseX - p.x);
+        
+        // Multi-shot logic
+        const count = 1 + p.stats.multiShot;
+        const spread = Math.PI / 12; // 15 degrees between arrows
+        for (let i = 0; i < count; i++) {
+            const angle = baseAngle + (i - (count - 1) / 2) * spread;
+            const tx = p.x + Math.cos(angle) * 100;
+            const ty = p.y + Math.sin(angle) * 100;
+            this.fireProjectileAt(p.x, p.y, tx, ty, p.damage * p.dmgBoost, true, 'flecha');
+        }
+        // Removed AoE green circle as requested
 
         if (this.bossActive) {
             const dist = Math.hypot(this.bossX - p.x, this.bossY - p.y);
@@ -783,16 +898,15 @@ export class WaveGame {
         if (this.clase.nombre === 'Guerrero') {
             this.spawnAoE(p.x, p.y, range, 0.5, 'rgba(239, 68, 68, 0.35)');
         } else if (this.clase.nombre === 'Arquero') {
-            // Archer skill: large arrow
-            const nearest = this.findNearestEnemy(p.x, p.y, 1000);
-            if (nearest) {
-                // Skil projectile is MUCH bigger and hits all in its path (conceptual)
-                // For simplicity, we fire one big arrow and the global loop handles dmg
-                this.fireProjectileAt(p.x, p.y, nearest.x, nearest.y, p.damage * p.dmgBoost * 5, true, 'flecha', 4.0);
-                this.spawnAoE(p.x, p.y, range, 0.5, 'rgba(34, 197, 94, 0.3)');
-            } else {
-                 this.spawnAoE(p.x, p.y, range, 0.5, 'rgba(34, 197, 94, 0.3)');
+            // Archer skill: circular burst of arrows
+            const arrowCount = 12;
+            for (let i = 0; i < arrowCount; i++) {
+                const angle = (i / arrowCount) * Math.PI * 2;
+                const tx = p.x + Math.cos(angle) * 100;
+                const ty = p.y + Math.sin(angle) * 100;
+                this.fireProjectileAt(p.x, p.y, tx, ty, p.damage * p.dmgBoost * 2, true, 'flecha', 1.5);
             }
+            // No AoE visual as requested
         }
         
         this.cleanDeadEnemies();
@@ -809,6 +923,22 @@ export class WaveGame {
             const dyPl = p.y - e.y;
             const dPl = Math.hypot(dxPl, dyPl);
 
+            // Update status effects
+            if (e.poisonTimer && e.poisonTimer > 0) {
+                e.poisonTimer -= dt;
+                if (Math.floor(e.poisonTimer * 2) !== Math.floor((e.poisonTimer + dt) * 2)) {
+                   e.hp = Math.round((e.hp - 5) * 10) / 10; // DOT
+                   this.spawnDamageNumber(e.x, e.y - 20, 5, '#a855f7');
+                }
+            }
+            if (e.bleedTimer && e.bleedTimer > 0) {
+                e.bleedTimer -= dt;
+                if (Math.floor(e.bleedTimer * 3) !== Math.floor((e.bleedTimer + dt) * 3)) {
+                   e.hp = Math.round((e.hp - 8) * 10) / 10; // DOT
+                   this.spawnDamageNumber(e.x, e.y - 20, 8, '#ef4444');
+                }
+            }
+            
             // Spot logic
             if (!e.spottedPlayer && dPl < e.detectionRadius) {
                 e.spottedPlayer = true;
@@ -822,8 +952,8 @@ export class WaveGame {
 
                 if (dPl > attackThreshold) {
                     e.state = 'run';
-                    const moveX = (dxPl / dPl) * e.speed * dt;
-                    const moveY = (dyPl / dPl) * e.speed * dt;
+                    let moveX = (dxPl / dPl) * e.speed * dt;
+                    let moveY = (dyPl / dPl) * e.speed * dt;
 
                     // Directional mode
                     if (Math.abs(moveY) > Math.abs(moveX) * 1.5) {
@@ -836,6 +966,42 @@ export class WaveGame {
                     if (!this.checkObstacleCollision(e.x + moveX, e.y + moveY, 20)) {
                         e.x += moveX;
                         e.y += moveY;
+                    } else {
+                        // Smart AI Movement: sample 16 directions and pick the best valid one
+                        // We remove the "must be closer than current" restriction to avoid local minima
+                        let bestX = e.x;
+                        let bestY = e.y;
+                        let minDist = Infinity;
+
+                        for (let i = 0; i < 16; i++) {
+                            const ang = (i / 16) * Math.PI * 2;
+                            const tx = e.x + Math.cos(ang) * e.speed * dt;
+                            const ty = e.y + Math.sin(ang) * e.speed * dt;
+
+                            if (!this.checkObstacleCollision(tx, ty, 20)) {
+                                const dist = Math.hypot(p.x - tx, p.y - ty);
+                                if (dist < minDist) {
+                                    minDist = dist;
+                                    bestX = tx;
+                                    bestY = ty;
+                                }
+                            }
+                        }
+                        
+                        // Apply best move if one was found
+                        if (bestX !== e.x || bestY !== e.y) {
+                            const actualDx = bestX - e.x;
+                            const actualDy = bestY - e.y;
+                            if (Math.abs(actualDy) > Math.abs(actualDx) * 1.5) {
+                                e.moveMode = actualDy < 0 ? 'up' : 'down';
+                            } else {
+                                e.moveMode = 'horizontal';
+                                if (Math.abs(actualDx) > 0.1) e.direction = actualDx > 0 ? 1 : -1;
+                            }
+                            
+                            e.x = bestX;
+                            e.y = bestY;
+                        }
                     }
                 } else {
                     // Melee attack range
@@ -845,12 +1011,14 @@ export class WaveGame {
                         e.attackTimer = e.attackCooldown;
                         if (!p.invincible && !p.skillActive) {
                             let dmg = e.damage;
+                            dmg *= (1 - p.stats.defense);
                             if (p.shield > 0) {
                                 const absorbed = Math.min(p.shield, dmg);
                                 p.shield -= absorbed;
                                 dmg -= absorbed;
                             }
-                            p.hp -= dmg;
+                            dmg = Math.round(dmg * 10) / 10;
+                            p.hp = Math.round((p.hp - Math.max(0, dmg)) * 10) / 10;
                             p.invincible = true;
                             p.invincibleTimer = 0.5;
                             this.callbacks.onHpChange(p.hp, p.maxHp);
@@ -983,20 +1151,36 @@ export class WaveGame {
                 const d = Math.hypot(proj.x - e.x, proj.y - e.y);
                 const eRadius = e.isTank ? 40 : 25;
                 if (d < eRadius + proj.radius) {
-                    e.hp -= proj.damage;
+                    let dmg = proj.damage;
+                    if (Math.random() < this.player.stats.critChance) dmg *= 2;
+                    if (e.marked) dmg *= 1.3;
+
+                    e.hp -= dmg;
                     e.hitFlash = 0.2;
-                    this.spawnDamageNumber(e.x, e.y - 10, Math.round(proj.damage), '#fde047');
-                    projToRemove.add(proj);
+                    if (this.player.stats.poison) e.poisonTimer = 4.0;
+                    if (this.player.stats.mark) e.marked = true;
+
+                    this.spawnDamageNumber(e.x, e.y - 10, Math.round(dmg), '#fde047');
+                    
+                    if (this.player.stats.lifeSteal > 0) {
+                        this.player.hp = Math.round(Math.min(this.player.maxHp, this.player.hp + dmg * this.player.stats.lifeSteal) * 10) / 10;
+                        this.callbacks.onHpChange(this.player.hp, this.player.maxHp);
+                    }
+
+                    if (!this.player.stats.penetration) projToRemove.add(proj);
                     if (e.hp <= 0) {
                         enemiesToRemove.add(e.id);
                         this.player.kills++;
                         const baseGold = e.isTank ? 15 : e.isSprinter ? 8 : 5;
-                        const gold = Math.floor(baseGold * this.player.goldMult);
+                        const gold = Math.floor((baseGold + this.wave * 2) * this.player.goldMult);
                         this.player.gold += gold;
                         this.player.exp += (e.isTank ? 20 : 10) * this.player.expMult;
                         this.callbacks.onKillsChange(this.player.kills);
                         this.callbacks.onGoldChange(this.player.gold);
                         this.spawnDamageNumber(e.x, e.y - 30, gold, '#22c55e');
+
+                        // Drop Buff Logic
+                        this.checkBuffDrop(e);
                     }
                     break;
                 }
@@ -1057,6 +1241,41 @@ export class WaveGame {
         }
     }
 
+    private checkBuffDrop(e: Enemy | 'boss'): void {
+        let chance = 0.002; // 0.2%
+        if (e === 'boss') chance = 1.0;
+        else if (e.isTank || e.isSprinter) chance = 0.005;
+
+        if (Math.random() < chance) {
+            this.running = false; // PAUSE GAME
+            const pool = ALL_BUFFS.filter(b => !b.classRestrict || b.classRestrict === (this.clase.nombre.toLowerCase() === 'guerrero' ? 'guerrero' : 'arquero'));
+            const shuffled = [...pool].sort(() => 0.5 - Math.random());
+            const options = shuffled.slice(0, 3);
+            this.callbacks.onBuffDrop(options);
+        }
+    }
+
+    public applyBuff(type: BuffType): void {
+        this.player.buffs.add(type);
+        const s = this.player.stats;
+        switch(type) {
+            case 'penetration': s.penetration = true; break;
+            case 'bigger_area': s.areaMult += 0.3; break;
+            case 'life_steal': s.lifeSteal += 0.05; break;
+            case 'multi_attack': s.multiShot += 1; break;
+            case 'attack_speed': this.player.attackCooldown *= 0.8; break;
+            case 'defense': s.defense += 0.15; break;
+            case 'critical': s.critChance += 0.15; break;
+            case 'bounce': s.bounceCount += 1; break;
+            case 'bleed': s.bleed = true; break;
+            case 'execute': s.execute = true; break;
+            case 'backstab': s.backstab = true; break;
+            case 'poison': s.poison = true; break;
+            case 'mark': s.mark = true; break;
+        }
+        this.running = true; // RESUME
+    }
+
     private updateDamageNumbers(dt: number): void {
         for (const n of this.damageNums) {
             n.y -= 30 * dt;
@@ -1082,16 +1301,6 @@ export class WaveGame {
             rotation: Math.atan2(dy, dx),
             scale
         });
-    }
-
-    private findNearestEnemy(px: number, py: number, range: number): Enemy | null {
-        let nearest: Enemy | null = null;
-        let minD = range;
-        for (const e of this.enemies) {
-            const d = Math.hypot(e.x - px, e.y - py);
-            if (d < minD) { minD = d; nearest = e; }
-        }
-        return nearest;
     }
 
     private spawnDamageNumber(x: number, y: number, val: number, color: string = '#fde047'): void {
@@ -1291,6 +1500,18 @@ export class WaveGame {
         const ctx = this.ctx;
         const size = e.isTank ? 100 : e.isSprinter ? 55 : 75;
 
+        // Faint glow aura
+        if (e.isTank || e.isSprinter) {
+            ctx.save();
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = e.isTank ? '#a855f7' : '#eab308'; // Purple for tanks, yellow/gold for sprinters
+            ctx.beginPath();
+            ctx.arc(e.x, e.y, size / 2.2, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0,0,0,0.01)'; // Very faint fill to ensure shadow renders
+            ctx.fill();
+            ctx.restore();
+        }
+
         // Hit flash
         if (e.hitFlash > 0) {
             ctx.save();
@@ -1398,15 +1619,9 @@ export class WaveGame {
         return true;
     }
 
-    /** Upgrade: +20% exp gain */
+    /** Upgrade: XP Gain removed */
     public upgradeExpGain(): boolean {
-        const cost = this.getUpgradeCost('exp', 25);
-        if (this.player.gold < cost) return false;
-        this.player.gold -= cost;
-        this.upgradesBought['exp']++;
-        this.player.expMult *= 1.2;
-        this.callbacks.onGoldChange(this.player.gold);
-        return true;
+        return false;
     }
 
     /** Consumable: full heal */
@@ -1456,9 +1671,11 @@ export class WaveGame {
         this.player.gold += 500;
         this.callbacks.onGoldChange(this.player.gold);
         this.callbacks.onStatusMsg("¡VICTORIA! EL ESPECTADOR HA SIDO DERROTADO");
-        // Show shop overlay after boss
-        this.callbacks.onWaveEnd(this.wave, this.player.gold);
-        this.waveStartTimer = 999;
+        
+        this.checkBuffDrop('boss'); // Guaranteed drop
+        
+        // Skip the shop overlay and auto-start next wave after a short delay
+        this.waveStartTimer = 5.0; // Give some time for the victory message
     }
 
     private drawBoss(): void {

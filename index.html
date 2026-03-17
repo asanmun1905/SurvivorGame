@@ -19,7 +19,7 @@
   <div id="main-menu" class="screen">
     <div class="menu-content">
       <h1 class="game-title">Hopeless <span>Despair</span></h1>
-      <p class="subtitle">Dark Fantasy Edition</p>
+      <p class="subtitle">Survivor Game - Dark Fantasy Edition</p>
       <div class="mode-cards">
         <div class="mode-card featured" id="btn-start">
           <div class="mode-card-icon">🧪</div>
@@ -69,13 +69,6 @@
           <div class="setting-item">
             <label>Obstáculos</label>
             <input type="number" id="input-obstaculos" value="25" min="0" max="200">
-          </div>
-          <div class="setting-item">
-            <label>Población</label>
-            <div class="input-row">
-              <div class="input-field"><span>Bestias</span><input type="number" id="input-enemigos" value="8" min="1" max="50"></div>
-              <div class="input-field"><span>Cazadores</span><input type="number" id="input-presas" value="12" min="1" max="50"></div>
-            </div>
           </div>
         </section>
       </div>
@@ -190,6 +183,17 @@
     </div>
   </div>
 
+  <!-- ═══════════════════════ BUFF SELECTION OVERLAY ═══════════════════════ -->
+  <div id="buff-selection-overlay" class="overlay hidden">
+    <div class="class-modal">
+      <h2>✨ Selecciona una Mejora</h2>
+      <p class="class-subtitle">Has desbloqueado un efecto especial. Elige sabiamente.</p>
+      <div id="buff-options-container" style="display: flex; gap: 15px; justify-content: center; width: 100%;">
+        <!-- Rellenado por JS -->
+      </div>
+    </div>
+  </div>
+
   <!-- ═══════════════════════ WAVE END OVERLAY ═══════════════════════ -->
   <div id="wave-end-overlay" class="overlay hidden">
     <div class="wave-end-modal">
@@ -213,9 +217,7 @@
         <button class="wave-shop-btn" id="wbtn-gold">
           <span>💰 Oro +20%</span><span class="cost" id="wcost-gold">?g</span>
         </button>
-        <button class="wave-shop-btn" id="wbtn-exp">
-          <span>🌟 XP +20%</span><span class="cost" id="wcost-exp">?g</span>
-        </button>
+        <!-- XP Removed -->
         <div class="shop-section-title" style="margin-top:0.6rem;">OBJETOS</div>
         <button class="wave-shop-btn" id="wbtn-potion">
           <span>🧪 Poción (Cura tot.)</span><span class="cost">60g</span>
@@ -307,7 +309,7 @@
         <button class="shop-btn" id="shop-btn-dmg">⚔️ Daño +20% <span class="cost" id="cost-dmg">?g</span></button>
         <button class="shop-btn" id="shop-btn-spd">⚡ Velocidad +15% <span class="cost" id="cost-spd">?g</span></button>
         <button class="shop-btn" id="shop-btn-gold">💰 Oro +20% <span class="cost" id="cost-gold">?g</span></button>
-        <button class="shop-btn" id="shop-btn-exp">🌟 XP +20% <span class="cost" id="cost-exp">?g</span></button>
+        <!-- XP Removed -->
 
         <div class="shop-section-title" style="margin-top:0.5rem;">OBJETOS</div>
         <button class="shop-btn" id="shop-btn-potion">🧪 Poción <span class="cost">60g</span></button>

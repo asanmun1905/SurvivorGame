@@ -64,14 +64,13 @@ const DOM = {
     wbtnDmg: get('wbtn-dmg') as HTMLButtonElement,
     wbtnSpd: get('wbtn-spd') as HTMLButtonElement,
     wbtnGold: get('wbtn-gold') as HTMLButtonElement,
-    wbtnExp: get('wbtn-exp') as HTMLButtonElement,
     wbtnPotion: get('wbtn-potion') as HTMLButtonElement,
     wbtnShield: get('wbtn-shield') as HTMLButtonElement,
     wcostHp: get('wcost-hp'),
     wcostDmg: get('wcost-dmg'),
     wcostSpd: get('wcost-spd'),
     wcostGold: get('wcost-gold'),
-    wcostExp: get('wcost-exp'),
+    // wcostExp removed
 
     // ── Status banner
     statusBanner: get('status-banner'),
@@ -96,14 +95,13 @@ const DOM = {
     shopBtnDmg: get('shop-btn-dmg') as HTMLButtonElement,
     shopBtnSpd: get('shop-btn-spd') as HTMLButtonElement,
     shopBtnGold: get('shop-btn-gold') as HTMLButtonElement,
-    shopBtnExp: get('shop-btn-exp') as HTMLButtonElement,
     shopBtnPotion: get('shop-btn-potion') as HTMLButtonElement,
     shopBtnShield: get('shop-btn-shield') as HTMLButtonElement,
     costHp: get('cost-hp'),
     costDmg: get('cost-dmg'),
     costSpd: get('cost-spd'),
     costGold: get('cost-gold'),
-    costExp: get('cost-exp'),
+    // costExp removed
 
     // ── Sim HUD
     turnCount: get('turn-count'),
@@ -145,14 +143,15 @@ const DOM = {
     inputAncho: get('input-ancho') as HTMLInputElement,
     inputAlto: get('input-alto') as HTMLInputElement,
     inputObstaculos: get('input-obstaculos') as HTMLInputElement,
-    inputEnemigos: get('input-enemigos') as HTMLInputElement,
-    inputPresas: get('input-presas') as HTMLInputElement,
     inputVelocidad: get('input-velocidad') as HTMLInputElement,
     valVelocidad: get('val-velocidad'),
     // Boss HUD
     bossHud: get('boss-hud'),
     bossHpFill: get('boss-hp-fill'),
     inputBrightness: get('input-brightness') as HTMLInputElement,
+    // Buff overlay
+    buffSelectionOverlay: get('buff-selection-overlay'),
+    buffOptionsContainer: get('buff-options-container'),
 };
 
 const ctx = DOM.canvas.getContext('2d')!;
@@ -176,7 +175,7 @@ let turns = 0;
 // Map class to skill name
 const SKILL_NAMES: Record<ClaseWave, string> = {
     guerrero: 'Golpe Sísmico',
-    arquero: 'Flecha Colosal'
+    arquero: 'Lluvia de Flechas'
 };
 
 /** ─────────────────── HELPERS ─────────────────── */
@@ -185,8 +184,8 @@ function getConfig() {
         ancho: Math.max(5, parseInt(DOM.inputAncho.value) || 20),
         alto: Math.max(5, parseInt(DOM.inputAlto.value) || 12),
         obstaculos: Math.max(0, parseInt(DOM.inputObstaculos.value) || 25),
-        enemigos: Math.max(1, parseInt(DOM.inputEnemigos.value) || 8),
-        presas: Math.max(1, parseInt(DOM.inputPresas.value) || 12),
+        enemigos: 8, // Default value
+        presas: 12,  // Default value
         velocidad: parseInt(DOM.inputVelocidad.value) || 120,
     };
 }
@@ -263,11 +262,14 @@ function showBanner(msg: string) {
 function refreshShopCosts() {
     if (!waveMotor) return;
     const c = waveMotor.getShopCosts();
-    DOM.costHp.textContent = `${c.hp}g`;    DOM.wcostHp.textContent = `${c.hp}g`;
-    DOM.costDmg.textContent = `${c.damage}g`; DOM.wcostDmg.textContent = `${c.damage}g`;
-    DOM.costSpd.textContent = `${c.speed}g`;  DOM.wcostSpd.textContent = `${c.speed}g`;
-    DOM.costGold.textContent = `${c.gold}g`;  DOM.wcostGold.textContent = `${c.gold}g`;
-    DOM.costExp.textContent = `${c.exp}g`;    DOM.wcostExp.textContent = `${c.exp}g`;
+    if (DOM.costHp) DOM.costHp.textContent = `${c.hp}g`;
+    if (DOM.wcostHp) DOM.wcostHp.textContent = `${c.hp}g`;
+    if (DOM.costDmg) DOM.costDmg.textContent = `${c.damage}g`;
+    if (DOM.wcostDmg) DOM.wcostDmg.textContent = `${c.damage}g`;
+    if (DOM.costSpd) DOM.costSpd.textContent = `${c.speed}g`;
+    if (DOM.wcostSpd) DOM.wcostSpd.textContent = `${c.speed}g`;
+    if (DOM.costGold) DOM.costGold.textContent = `${c.gold}g`;
+    if (DOM.wcostGold) DOM.wcostGold.textContent = `${c.gold}g`;
 }
 
 function updateWaveGold(g: number) {
@@ -371,7 +373,7 @@ function arrancarPlayableSandboxGrid() {
     psbMotor = new PlayableSandbox(DOM.canvas, {
         onHpChange: (hp, max) => {
              const pct = Math.max(0, (hp / max) * 100);
-             DOM.waveHpText.textContent = `${Math.max(0, Math.floor(hp))}/${max}`;
+             DOM.waveHpText.textContent = `${Math.max(0, Math.round(hp))}/${max}`;
              DOM.waveHpFill.style.width = `${pct}%`;
              DOM.waveHpFill.className = 'wave-hp-fill' + (pct < 25 ? ' low' : pct < 50 ? ' mid' : '');
         },
@@ -450,7 +452,7 @@ function arrancarOleadas(clase: ClaseWave) {
         },
         onHpChange: (hp, max) => {
             const pct = Math.max(0, (hp / max) * 100);
-            DOM.waveHpText.textContent = `${Math.max(0, hp)}/${max}`;
+            DOM.waveHpText.textContent = `${Math.max(0, Math.round(hp))}/${max}`;
             DOM.waveHpFill.style.width = `${pct}%`;
             DOM.waveHpFill.className = 'wave-hp-fill' + (pct < 25 ? ' low' : pct < 50 ? ' mid' : '');
         },
@@ -494,6 +496,24 @@ function arrancarOleadas(clase: ClaseWave) {
             } else {
                 DOM.bossHud.classList.add('hidden');
             }
+        },
+        onBuffDrop: (options) => {
+            DOM.buffOptionsContainer.innerHTML = '';
+            options.forEach(buff => {
+                const card = document.createElement('div');
+                card.className = 'class-card';
+                card.innerHTML = `
+                    <div class="class-icon">${buff.icon}</div>
+                    <h3>${buff.label}</h3>
+                    <p>${buff.desc}</p>
+                `;
+                card.onclick = () => {
+                   if (waveMotor) waveMotor.applyBuff(buff.type);
+                   DOM.buffSelectionOverlay.classList.add('hidden');
+                };
+                DOM.buffOptionsContainer.appendChild(card);
+            });
+            DOM.buffSelectionOverlay.classList.remove('hidden');
         }
     });
 
@@ -662,7 +682,6 @@ DOM.shopBtnHp.onclick = () => shopAction(() => waveMotor!.upgradeHp());
 DOM.shopBtnDmg.onclick = () => shopAction(() => waveMotor!.upgradeDamage());
 DOM.shopBtnSpd.onclick = () => shopAction(() => waveMotor!.upgradeSpeed());
 DOM.shopBtnGold.onclick = () => shopAction(() => waveMotor!.upgradeGoldGain());
-DOM.shopBtnExp.onclick = () => shopAction(() => waveMotor!.upgradeExpGain());
 DOM.shopBtnPotion.onclick = () => shopAction(() => waveMotor!.buyPotion());
 DOM.shopBtnShield.onclick = () => shopAction(() => waveMotor!.buyShield());
 
@@ -677,7 +696,6 @@ DOM.wbtnHp.onclick = () => waveShopAction(() => waveMotor!.upgradeHp());
 DOM.wbtnDmg.onclick = () => waveShopAction(() => waveMotor!.upgradeDamage());
 DOM.wbtnSpd.onclick = () => waveShopAction(() => waveMotor!.upgradeSpeed());
 DOM.wbtnGold.onclick = () => waveShopAction(() => waveMotor!.upgradeGoldGain());
-DOM.wbtnExp.onclick = () => waveShopAction(() => waveMotor!.upgradeExpGain());
 DOM.wbtnPotion.onclick = () => waveShopAction(() => waveMotor!.buyPotion());
 DOM.wbtnShield.onclick = () => waveShopAction(() => waveMotor!.buyShield());
 
