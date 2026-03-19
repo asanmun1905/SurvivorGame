@@ -1,6 +1,5 @@
+import type { ClaseWave, BossLaser, Obstacle, DamageNumber, AoEEffect } from './WaveGame';
 import { CLASES_STATS } from './WaveGame';
-import type { Obstacle, DamageNumber, AoEEffect } from './WaveGame';
-import type { ClaseWave } from './WaveGame';
 import { Entidad } from '../entities/Entidad';
 import { BossEntity } from '../entities/BossEntity';
 import { Tank } from '../entities/Tank';
@@ -11,8 +10,9 @@ import { Obstaculo } from '../entities/Obstaculo';
 // ── Sprite URL imports (same as WaveGame) ──
 import bgImgUrl from '../../assets/Background/background.png';
 import arrowImgUrl from '../../assets/weapons/flecha.png';
-import bossImgUrl from '../../assets/bosses/WhatsApp_Image_2026-03-15_at_13.38.28-removebg-preview.png';
+import bossImgUrl from '../../assets/bosses/BeholderFrame1.png';
 import obsImgUrl from '../../assets/Obstacle/82cfbcc1-c0ad-4c07-91ae-ca682d039cb1_unnamed_1_-removebg-preview.png';
+import goldsacImgUrl from '../../assets/goldsac-removebg-preview.png';
 
 const MALO_FRAMES = {
     idle:    import.meta.glob('../../assets/MaloMelee/IdleFront-removebg-preview.png',  { eager:true, as:'url' }),
@@ -105,6 +105,8 @@ const RAY_FRAMES = [
     import.meta.glob('../../assets/bosses/Ray8.png', { eager:true, as:'url' }),
 ];
 
+const BOSS_FRAMES = import.meta.glob('../../assets/bosses/BeholderFrame*.png', { eager: true, as: 'url' });
+
 export interface SandboxPlayerStats {
     clase: ClaseWave;
     hp: number; damage: number; speed: number; x: number; y: number;
@@ -115,6 +117,7 @@ export interface SandboxCallbacks {
     onEnemiesChange: (n: number) => void;
     onGameOver: (kills: number) => void;
     onSkillCooldown: (ready: boolean, pct: number) => void;
+    onStatusMsg: (msg: string) => void;
     onBossHpChange: (hp: number, max: number, visible: boolean) => void;
 }
 
@@ -141,6 +144,8 @@ export class PlayableSandbox {
 
     private assets: Map<string, HTMLImageElement> = new Map();
     private assetsLoaded: Set<string> = new Set();
+    private tintCanvas = document.createElement('canvas');
+    private tintCtx = this.tintCanvas.getContext('2d', {willReadFrequently: true})!;
 
     private mode: 'setup'|'play' = 'setup';
     private running = false;
@@ -168,8 +173,9 @@ export class PlayableSandbox {
     private bossTimer = 0;
     private bossBeamAngle = 0;
     private bossTargetX = 0; private bossTargetY = 0;
-    private bossShake = 0; private bossBulletHellTimer = 0;
-    private rayFrameTimer = 0; private rayFrameIndex = 0;
+    private bossShake = 0; private bossBulletHellTimer: number = 0;
+    private lasers: BossLaser[] = [];
+    private bossFrame = 0; private bossFrameTimer = 0;
 
     private callbacks: SandboxCallbacks;
     private mouseX = 0; private mouseY = 0;
@@ -183,11 +189,12 @@ export class PlayableSandbox {
     private mouseDownHandler: () => void;
     private mouseUpHandler: () => void;
 
-    constructor(canvas: HTMLCanvasElement, callbacks: SandboxCallbacks) {
+    constructor(canvas: HTMLCanvasElement, callbacks: SandboxCallbacks, mastery?: Record<string, number>) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d')!;
         this.W = canvas.width; this.H = canvas.height;
         this.callbacks = callbacks;
+        this.player = { mastery: mastery || {} }; // Temp for setup
         this.loadAssets();
 
         this.keyDownHandler = (e) => {
@@ -210,7 +217,7 @@ export class PlayableSandbox {
     }
 
     private loadAssets() {
-        const simple: Record<string,string> = { bg: bgImgUrl, flecha: arrowImgUrl, boss: bossImgUrl, obstaculo: obsImgUrl };
+        const simple: Record<string,string> = { bg: bgImgUrl, flecha: arrowImgUrl, boss: bossImgUrl, obstaculo: obsImgUrl, goldsac: goldsacImgUrl };
         for (const [k, src] of Object.entries(simple)) {
             const img = new Image(); img.src = src;
             img.onload = () => {
@@ -238,6 +245,11 @@ export class PlayableSandbox {
         BUENO_FRAMES.attackRight.forEach((f,i) => this.loadImg(`bueno_attack_right_${i}`, Object.values(f)[0] as string));
         // Plasma ray frames
         RAY_FRAMES.forEach((f,i) => this.loadImg(`ray_${i}`, Object.values(f)[0] as string));
+        // Boss frames
+        const bossFrameKeys = Object.keys(BOSS_FRAMES).sort();
+        bossFrameKeys.forEach((key, i) => {
+            this.loadImg(`boss_frame_${i}`, BOSS_FRAMES[key] as any);
+        });
     }
 
     private loadImg(key: string, src: string) {
@@ -305,39 +317,77 @@ export class PlayableSandbox {
                 if (obsImg && this.assetsLoaded.has('obstaculo')) ctx.drawImage(obsImg, ex, ey, cs, cs);
                 else { ctx.fillStyle = '#475569'; ctx.fillRect(ex, ey, cs, cs); }
             } else {
-                ctx.fillStyle = e.getColor();
-                ctx.globalAlpha = 0.85;
-                ctx.fillRect(ex + 4, ey + 4, cs - 8, cs - 8);
-                ctx.globalAlpha = 1;
-                // Type label
-                ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
-                const label = e instanceof Tank ? 'T' : e instanceof Sprinter ? 'S' : 'E';
-                ctx.fillText(label, ex + cs/2, ey + cs/2 + 4);
+                const img = this.assets.get('malo_idle');
+                if (img && this.assetsLoaded.has('malo_idle')) {
+                    ctx.drawImage(img, ex, ey, cs, cs);
+                    const isTank = e instanceof Tank;
+                    const isSprinter = e instanceof Sprinter;
+                    const tint = isTank ? 'rgba(120,0,180,0.4)' : isSprinter ? 'rgba(0,200,220,0.35)' : null;
+                    if (tint) {
+                        ctx.fillStyle = tint;
+                        ctx.fillRect(ex, ey, cs, cs);
+                    }
+                } else {
+                    ctx.fillStyle = e.getColor();
+                    ctx.globalAlpha = 0.85;
+                    ctx.fillRect(ex + 4, ey + 4, cs - 8, cs - 8);
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+                    const label = e instanceof Tank ? 'T' : e instanceof Sprinter ? 'S' : 'E';
+                    ctx.fillText(label, ex + cs/2, ey + cs/2 + 4);
+                }
             }
         }
         // Player start
         if (this.playerStartPoint.x !== -1) {
-            const px = this.playerStartPoint.x * this.cellSize + this.cellSize/2;
-            const py = this.playerStartPoint.y * this.cellSize + this.cellSize/2;
-            ctx.fillStyle = '#3b82f6';
-            ctx.beginPath(); ctx.arc(px, py, this.cellSize*0.4, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
-            ctx.fillText('P', px, py + 4);
+            const px = this.playerStartPoint.x * this.cellSize;
+            const py = this.playerStartPoint.y * this.cellSize;
+            const cs = this.cellSize;
+            const img = this.assets.get('bueno_idle_front');
+            if (img && this.assetsLoaded.has('bueno_idle_front')) {
+                ctx.drawImage(img, px, py, cs, cs);
+            } else {
+                ctx.fillStyle = '#3b82f6';
+                ctx.beginPath(); ctx.arc(px + cs/2, py + cs/2, cs*0.4, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText('P', px + cs/2, py + cs/2 + 4);
+            }
         }
         ctx.textAlign = 'left';
     }
 
     // ─── Play Phase ───
-    public startPlayPhase(stats: SandboxPlayerStats) {
+    public startPlayPhase(stats: SandboxPlayerStats, mastery?: Record<string, number>) {
         this.mode = 'play';
+        const m = mastery || this.player.mastery || { hp: 0, damage: 0, atkSpd: 0, movSpd: 0, reflex: 0, cooldown: 0, luck: 0, revive: 0 };
         const cs = CLASES_STATS[stats.clase];
+
+        // Apply mastery bonuses
+        const hpBoost = 1 + (m.hp || 0) * 0.05;
+        const dmgBoost = 1 + (m.damage || 0) * 0.05;
+        const speedBoost = 1 + (m.movSpd || 0) * 0.05;
+        const cdReduction = Math.max(0.3, 1 - (m.cooldown || 0) * 0.07);
+
         this.player = {
-            ...stats, maxHp: stats.hp,
-            attackRange: cs.attackRange, attackCooldown: cs.attackCooldown, attackTimer: 0,
-            skillCooldown: cs.skillCooldown, skillTimer: 0, skillActive: false, skillActiveTimer: 0,
-            invincible: false, invincibleTimer: 0,
+            ...stats, 
+            maxHp: stats.hp * hpBoost,
+            hp: stats.hp * hpBoost,
+            damage: stats.damage * dmgBoost,
+            speed: stats.speed * speedBoost,
+            attackRange: cs.attackRange, 
+            attackCooldown: cs.attackCooldown * (1 / (1 + (m.atkSpd || 0) * 0.1)), 
+            attackTimer: 0,
+            skillCooldown: cs.skillCooldown * cdReduction, 
+            skillTimer: 0, 
+            skillActive: false, 
+            skillActiveTimer: 0,
+            invincible: false, 
+            invincibleTimer: 0,
             state: 'idle', direction: 1, frame: 0, frameTimer: 0, moveMode: 'horizontal',
-            clase: stats.clase
+            clase: stats.clase,
+            mastery: m,
+            revived: false,
+            essenceGained: 0
         };
 
         if (this.playerStartPoint.x !== -1) {
@@ -419,16 +469,27 @@ export class PlayableSandbox {
         if (this.keys['d'] || this.keys['arrowright']) vx += 1;
         if (vx !== 0 || vy !== 0) {
             const len = Math.hypot(vx, vy);
-            this.player.x += (vx/len) * this.player.speed * dt;
-            this.player.y += (vy/len) * this.player.speed * dt;
+            const moveX = (vx/len) * this.player.speed * dt;
+            const moveY = (vy/len) * this.player.speed * dt;
+            
+            if (!this.checkObstacleCollision(this.player.x + moveX, this.player.y + moveY, 20)) {
+                this.player.x += moveX;
+                this.player.y += moveY;
+            }
+
             if (this.player.state !== 'attack') {
                 this.player.state = 'run';
                 if (vx !== 0) { this.player.direction = vx > 0 ? 1 : -1; this.player.moveMode = 'horizontal'; }
                 else { this.player.moveMode = vy < 0 ? 'up' : 'down'; }
             }
         } else if (this.player.state !== 'attack') {
+            if (this.player.state !== 'idle') this.player.frame = 0;
             this.player.state = 'idle';
         }
+        
+        const oldState = this.player.state;
+        const oldMode = this.player.moveMode;
+        const oldDir = this.player.direction;
         this.player.x = Math.max(20, Math.min(this.W-20, this.player.x));
         this.player.y = Math.max(20, Math.min(this.H-20, this.player.y));
 
@@ -445,7 +506,12 @@ export class PlayableSandbox {
                 this.player.state = 'idle';
                 this.player.frame = 0;
             }
-        } else if (this.player.state === 'idle') {
+        }
+        if (this.player.state !== oldState || this.player.moveMode !== oldMode || this.player.direction !== oldDir) {
+            this.player.frame = 0;
+        }
+
+        if (this.player.state === 'idle') {
             this.player.frame = 0;
         }
 
@@ -539,16 +605,16 @@ export class PlayableSandbox {
                     this.bossHp -= p.damage;
                     this.bossShake = 1;
                     this.callbacks.onBossHpChange(this.bossHp, this.bossMaxHp, true);
-                    this.addDamageNumber(this.bossX, this.bossY, p.damage, '#fbbf24');
+                    this.addDamageNumber(this.bossX, this.bossY, p.damage, '#ef4444');
                     this.projectiles.splice(i,1); hit = true;
                     if (this.bossHp <= 0) this.killBoss();
                 }
                 if (!hit) for (let j = this.enemies.length-1; j>=0; j--) {
                     const e = this.enemies[j];
                     if (Math.hypot(p.x-e.x, p.y-e.y) < p.radius+e.radius) {
-                        e.hp -= p.damage; e.hitFlash = 0.15;
-                        this.addDamageNumber(e.x, e.y, p.damage, '#fbbf24');
-                        this.projectiles.splice(i,1); break;
+                    e.hp -= p.damage; e.hitFlash = 0.15;
+                    this.addDamageNumber(e.x, e.y, p.damage, '#ef4444');
+                    this.projectiles.splice(i,1); break;
                     }
                 }
             } else if (!this.player.invincible && !this.player.skillActive) {
@@ -557,7 +623,9 @@ export class PlayableSandbox {
                     this.callbacks.onHpChange(this.player.hp, this.player.maxHp);
                     this.screenshake = 0.5;
                     this.projectiles.splice(i,1);
-                    if (this.player.hp <= 0) this.handleGameOver();
+                    if (this.player.hp <= 0) {
+                        this.handlePlayerDeath();
+                    }
                 }
             }
         }
@@ -576,8 +644,14 @@ export class PlayableSandbox {
             if (e.attackTimer > 0) e.attackTimer -= dt;
             const dist = Math.hypot(this.player.x-e.x, this.player.y-e.y);
             if (dist > e.radius+15) {
-                e.x += ((this.player.x-e.x)/dist)*e.speed*dt;
-                e.y += ((this.player.y-e.y)/dist)*e.speed*dt;
+                const moveX = ((this.player.x-e.x)/dist)*e.speed*dt;
+                const moveY = ((this.player.y-e.y)/dist)*e.speed*dt;
+                
+                if (!this.checkObstacleCollision(e.x + moveX, e.y + moveY, e.radius)) {
+                    e.x += moveX;
+                    e.y += moveY;
+                }
+
                 e.state = 'run';
                 const ex = this.player.x-e.x, ey2 = this.player.y-e.y;
                 if (Math.abs(ex) >= Math.abs(ey2)) { e.moveMode = 'horizontal'; e.direction = ex > 0 ? 1 : -1; }
@@ -598,7 +672,9 @@ export class PlayableSandbox {
                     this.addDamageNumber(this.player.x, this.player.y, e.damage, '#ef4444');
                     this.callbacks.onHpChange(this.player.hp, this.player.maxHp);
                     this.screenshake = 0.5;
-                    if (this.player.hp <= 0) this.handleGameOver();
+                    if (this.player.hp <= 0) {
+                        this.handlePlayerDeath();
+                    }
                 }
             }
         }
@@ -616,6 +692,11 @@ export class PlayableSandbox {
     private updateBoss(dt: number) {
         if (!this.bossActive || this.bossHp <= 0) return;
         this.bossTimer += dt; this.bossBulletHellTimer += dt;
+        this.bossFrameTimer += dt;
+        if (this.bossFrameTimer > 0.08) {
+            this.bossFrameTimer = 0;
+            this.bossFrame = (this.bossFrame + 1) % 12;
+        }
 
         if (this.bossState === 'moving') {
             const dx = this.bossTargetX-this.bossX, dy = this.bossTargetY-this.bossY, d = Math.hypot(dx,dy);
@@ -628,7 +709,6 @@ export class PlayableSandbox {
                 this.bossState = 'firing'; this.bossTimer = 0;
                 this.screenshake = 2;
                 this.bossBeamAngle = Math.atan2(this.player.y-this.bossY, this.player.x-this.bossX);
-                this.rayFrameTimer = 0; this.rayFrameIndex = 0;
             }
         } else if (this.bossState === 'firing') {
             if (this.bossTimer > 3) {
@@ -640,19 +720,52 @@ export class PlayableSandbox {
                 let diff = target - this.bossBeamAngle;
                 while (diff > Math.PI) diff -= Math.PI*2;
                 while (diff < -Math.PI) diff += Math.PI*2;
-                this.bossBeamAngle += diff * dt * 1.5;
-                this.screenshake = Math.max(this.screenshake, 0.4);
+                this.bossBeamAngle += diff * dt * 0.7; // Slower turn speed
                 this.checkBeamCollision(dt);
-                // Animate ray frames
-                this.rayFrameTimer += dt;
-                if (this.rayFrameTimer > 0.08) { this.rayFrameTimer = 0; this.rayFrameIndex = (this.rayFrameIndex+1) % 8; }
             }
         }
-
-        const interval = (this.bossHp < this.bossMaxHp * 0.3) ? 2.5 : 4;
-        if (this.bossBulletHellTimer > interval) {
-            this.bossBulletHellTimer = 0; this.spawnBossBulletPattern();
+        
+        // Update Lasers
+        for (const laser of this.lasers) {
+            laser.life -= dt;
+            if (laser.isWarning && laser.life <= laser.maxLife / 2) {
+                laser.isWarning = false;
+                this.screenshake = 1.0;
+            }
+            if (!laser.isWarning) {
+                this.checkLaserCollision(laser, dt);
+            }
         }
+        this.lasers = this.lasers.filter(l => l.life > 0);
+
+        const bhInterval = (this.bossHp < this.bossMaxHp * 0.3) ? 2.5 : 4;
+        if (this.bossBulletHellTimer > bhInterval) {
+            this.bossBulletHellTimer = 0;
+            this.spawnBossBulletPattern();
+        }
+    }
+    
+    private checkLaserCollision(laser: BossLaser, dt: number) {
+        const p = this.player;
+        if (p.invincible || p.skillActive) return;
+        const cos = Math.cos(-laser.angle), sin = Math.sin(-laser.angle);
+        const px_rel = (p.x - laser.x) * cos - (p.y - laser.y) * sin;
+        const py_rel = (p.x - laser.x) * sin + (p.y - laser.y) * cos;
+        const playerRadius = 15;
+        if (px_rel > -playerRadius && px_rel < 2000 && 
+            py_rel > -laser.width/2 - playerRadius && py_rel < laser.width/2 + playerRadius) {
+            p.hp -= 100 * dt;
+            this.screenshake = 1.0;
+            this.callbacks.onHpChange(p.hp, p.maxHp);
+            if (p.hp <= 0) this.handlePlayerDeath();
+        }
+    }
+
+    private checkObstacleCollision(x: number, y: number, radius: number): boolean {
+        for (const obs of this.obstacles) {
+            if (Math.hypot(x - obs.x, y - obs.y) < radius + obs.radius) return true;
+        }
+        return false;
     }
 
     private checkBeamCollision(dt: number) {
@@ -667,22 +780,32 @@ export class PlayableSandbox {
             p.hp -= 150*dt;
             this.screenshake = 1.5;
             this.callbacks.onHpChange(p.hp, p.maxHp);
-            if (p.hp <= 0) this.handleGameOver();
+            if (p.hp <= 0) this.handlePlayerDeath();
         }
     }
 
     private spawnBossBulletPattern() {
-        const patterns = ['circle','spiral','scatter'];
-        const pat = patterns[Math.floor(Math.random()*3)];
+        const patterns = ['circle','spiral','scatter','lasers'];
+        const pat = patterns[Math.floor(Math.random()*4)];
         const enraged = this.bossHp < this.bossMaxHp * 0.3;
-        const count = enraged ? 35 : 20;
+        const count = enraged ? 22 : 12;
         const base = Math.random()*Math.PI*2;
         if (pat === 'circle') for (let i=0;i<count;i++) this.fireBossProj(base+(i/count)*Math.PI*2, 180);
         else if (pat === 'spiral') for (let i=0;i<count;i++) this.fireBossProj(base+(i/count)*Math.PI*4, 220);
-        else {
+        else if (pat === 'lasers') {
+            const lCount = enraged ? 5 : 3;
+            for (let i = 0; i < lCount; i++) {
+                const angle = base + (i / lCount) * Math.PI * 2;
+                this.lasers.push({
+                    x: this.bossX, y: this.bossY,
+                    angle: angle, width: 25,
+                    life: 1.5, maxLife: 1.5, isWarning: true
+                });
+            }
+        } else {
             const ang = Math.atan2(this.player.y-this.bossY, this.player.x-this.bossX);
-            const sc = enraged ? 20 : 10;
-            for (let i=0;i<sc;i++) this.fireBossProj(ang+(Math.random()-0.5)*(enraged?2.5:1.5), (enraged?300:250)+Math.random()*150);
+            const sc = enraged ? 14 : 7;
+            for (let i=0;i<sc;i++) this.fireBossProj(ang+(Math.random()-0.5)*(enraged?2.5:1.5), (enraged?300:250)+Math.random()*100);
         }
     }
 
@@ -705,8 +828,20 @@ export class PlayableSandbox {
         this.damageNums.push({ x: x+(Math.random()-0.5)*40, y: y-20, val: Math.floor(val), life: 0.8, color });
     }
 
-    private handleGameOver() {
-        if (!this.running) return;
+    private handlePlayerDeath() {
+        const p = this.player;
+        if (p.mastery.revive > 0 && !p.revived) {
+            p.revived = true;
+            p.hp = p.maxHp * 0.5;
+            p.invincible = true;
+            p.invincibleTimer = 3.0;
+            this.callbacks.onHpChange(p.hp, p.maxHp);
+            this.callbacks.onStatusMsg("🕯️ RESURRECCIÓN UMBRÍA");
+            this.aoeEffects.push({
+                x: p.x, y: p.y, radius: 120, life: 0.6, maxLife: 0.6, color: 'rgba(168,85,247,0.4)'
+            });
+            return;
+        }
         this.running = false;
         this.callbacks.onGameOver(this.kills);
     }
@@ -726,7 +861,6 @@ export class PlayableSandbox {
         this.drawObstacles();
         for (const e of this.enemies) this.drawEnemy(e);
         this.drawBoss();
-        this.drawPlayer();
 
         // Projectiles
         for (const p of this.projectiles) {
@@ -762,12 +896,29 @@ export class PlayableSandbox {
 
         // Damage numbers
         for (const n of this.damageNums) {
-            ctx.save(); ctx.globalAlpha = n.life/0.9;
-            ctx.fillStyle = n.color; ctx.font = 'bold 14px Inter,sans-serif'; ctx.textAlign = 'center';
-            ctx.fillText(String(Math.round(n.val)), n.x, n.y); ctx.restore();
+            ctx.save();
+            ctx.globalAlpha = n.life/0.9;
+            ctx.font = '12px "Press Start 2P", "MedievalSharp", cursive';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#000';
+            ctx.strokeText(String(Math.round(n.val)), n.x, n.y);
+            ctx.fillStyle = n.color;
+            ctx.fillText(String(Math.round(n.val)), n.x, n.y);
+            
+            if (n.color === '#fbbf24' || n.color === '#fde047') {
+                const sacImg = this.assets.get('goldsac');
+                if (sacImg && this.assetsLoaded.has('goldsac')) {
+                    const txtWidth = ctx.measureText(String(Math.round(n.val))).width;
+                    ctx.drawImage(sacImg, n.x + txtWidth/2 + 2, n.y - 12, 16, 16);
+                }
+            }
+            ctx.restore();
         }
 
         ctx.restore();
+        this.drawPlayer();
     }
 
     private drawObstacles() {
@@ -802,8 +953,21 @@ export class PlayableSandbox {
         );
 
         const img = this.assets.get(imgKey);
-        if (img && this.assetsLoaded.has(imgKey)) ctx.drawImage(img, p.x-SIZE/2, p.y-SIZE/2, SIZE, SIZE);
-        else { ctx.beginPath(); ctx.arc(p.x,p.y,SIZE/2,0,Math.PI*2); ctx.fillStyle='#3b82f6'; ctx.fill(); }
+        if (img && this.assetsLoaded.has(imgKey)) {
+            ctx.drawImage(img, p.x-SIZE/2, p.y-SIZE/2, SIZE, SIZE);
+        } else {
+            // ROBUST FALLBACK
+            const fallbackKey = p.direction === 1 ? 'bueno_idle_right' : 'bueno_idle_left';
+            const fallbackImg = this.assets.get(fallbackKey);
+            if (fallbackImg && this.assetsLoaded.has(fallbackKey)) {
+                ctx.drawImage(fallbackImg, p.x - SIZE/2, p.y - SIZE/2, SIZE, SIZE);
+            } else {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, SIZE/2.5, 0, Math.PI*2);
+                ctx.fillStyle = p.clase === 'guerrero' ? '#ef4444' : '#22c55e';
+                ctx.fill();
+            }
+        }
 
         const barW = 36, filled = (p.hp/p.maxHp)*barW;
         ctx.fillStyle='#000000aa'; ctx.fillRect(p.x-barW/2-1, p.y-SIZE-10, barW+2, 7);
@@ -815,11 +979,6 @@ export class PlayableSandbox {
         const ctx = this.ctx;
         const size = e.type==='tank' ? 100 : e.type==='sprinter' ? 55 : 75;
 
-        if (e.hitFlash > 0) {
-            ctx.save(); ctx.globalAlpha = Math.min(1, e.hitFlash*5);
-            ctx.fillStyle='#ff4444'; ctx.fillRect(e.x-size/2, e.y-size/2, size, size); ctx.restore();
-        }
-
         const imgKey = e.state==='idle' ? 'malo_idle' :
             e.state==='run' ? (
                 e.moveMode==='up'   ? `malo_run_up_${e.frame}` :
@@ -828,76 +987,124 @@ export class PlayableSandbox {
 
         const img = this.assets.get(imgKey);
         if (img && this.assetsLoaded.has(imgKey)) {
+            let drawX = e.x - size/2;
+            let drawY = e.y - size/2;
             ctx.save();
             if (e.direction === -1) { ctx.translate(e.x*2, 0); ctx.scale(-1,1); }
-            ctx.drawImage(img, e.x-size/2, e.y-size/2, size, size);
             const tint = e.type==='tank'?'rgba(120,0,180,0.4)':e.type==='sprinter'?'rgba(0,200,220,0.35)':null;
-            if (tint) { ctx.save(); ctx.globalAlpha=0.4; ctx.fillStyle=tint; ctx.fillRect(e.x-size/2,e.y-size/2,size,size); ctx.restore(); }
+            
+            if (e.hitFlash > 0 || tint) {
+                this.tintCanvas.width = size;
+                this.tintCanvas.height = size;
+                this.tintCtx.clearRect(0,0,size,size);
+                this.tintCtx.drawImage(img, 0, 0, size, size);
+                this.tintCtx.globalCompositeOperation = 'source-atop';
+                if (tint) {
+                    this.tintCtx.fillStyle = tint;
+                    this.tintCtx.fillRect(0,0,size,size);
+                }
+                if (e.hitFlash > 0) {
+                    this.tintCtx.fillStyle = `rgba(255,0,0,${Math.min(1, Math.max(0, e.hitFlash*5)) * 0.6})`;
+                    this.tintCtx.fillRect(0,0,size,size);
+                }
+                this.tintCtx.globalCompositeOperation = 'source-over';
+                ctx.drawImage(this.tintCanvas, drawX, drawY);
+            } else {
+                ctx.drawImage(img, drawX, drawY, size, size);
+            }
             ctx.restore();
         } else {
             ctx.beginPath(); ctx.arc(e.x,e.y,size/2,0,Math.PI*2);
             ctx.fillStyle = e.type==='tank'?'#7c3aed':e.type==='sprinter'?'#06b6d4':'#ef4444'; ctx.fill();
         }
-        const barW = size+4, filled = Math.max(0,(e.hp/e.maxHp))*barW;
-        ctx.fillStyle='#000000aa'; ctx.fillRect(e.x-barW/2-1, e.y-size/2-9, barW+2, 6);
-        ctx.fillStyle='#ef4444'; ctx.fillRect(e.x-barW/2, e.y-size/2-8, filled, 4);
+        // HP bar - common style
+        const barW = size * 0.8, barH = 6, filled = Math.max(0, (e.hp/e.maxHp)*barW);
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(e.x - barW/2, e.y - size/2 - 12, barW, barH);
+        ctx.fillStyle = e.hp > e.maxHp * 0.5 ? '#22c55e' : e.hp > e.maxHp * 0.25 ? '#eab308' : '#ef4444';
+        ctx.fillRect(e.x - barW/2, e.y - size/2 - 12, filled, barH);
     }
 
     private drawBoss() {
         if (!this.bossActive) return;
 
+        const ctx = this.ctx;
+        const frameKey = `boss_frame_${this.bossFrame}`;
+        let renderObj: HTMLImageElement | null | undefined = this.assets.get(frameKey);
+        if (!renderObj || !this.assetsLoaded.has(frameKey)) renderObj = this.assets.get('boss');
+
+        // Normalize rendering to prevent twitching
+        const targetW = 180;
+        const aspect = renderObj ? renderObj.width / (renderObj.height || 1) : 1;
+        const rw = targetW;
+        const rh = targetW / aspect;
+
+        let bx = this.bossX, by = this.bossY;
+        const baseWidth = 30;
+
         // Charging effect
         if (this.bossState === 'charging') {
             const t = this.bossTimer;
-            this.ctx.save(); this.ctx.translate(this.bossX, this.bossY);
-            for (let i=0; i<8; i++) {
-                const angle = t*10+(i/8)*Math.PI*2, r = (1-t/2)*80+20;
-                this.ctx.fillStyle='#facc15'; this.ctx.beginPath();
-                this.ctx.arc(Math.cos(angle)*r, Math.sin(angle)*r, 6, 0, Math.PI*2); this.ctx.fill();
+            ctx.save(); ctx.translate(bx, by);
+            for (let i = 0; i < 8; i++) {
+                const angle = t * 10 + (i / 8) * Math.PI * 2;
+                const r = (1.0 - t / 2) * 80 + 20;
+                ctx.fillStyle = '#facc15';
+                ctx.beginPath();
+                ctx.arc(Math.cos(angle) * r, Math.sin(angle) * r, 6, 0, Math.PI * 2);
+                ctx.fill();
             }
-            this.ctx.restore();
+            ctx.restore();
         }
 
-        // Plasma ray: draw with animated sprite frames
+        // Plasma ray
         if (this.bossState === 'firing') {
-            this.ctx.save();
-            this.ctx.translate(this.bossX, this.bossY);
-            this.ctx.rotate(this.bossBeamAngle);
+            ctx.save();
+            ctx.translate(bx, by);
+            ctx.rotate(this.bossBeamAngle);
 
-            const rayKey = `ray_${this.rayFrameIndex}`;
+            const rayKey = `ray_${(Math.floor(this.bossFrame * 8 / 12)) % 8}`;
             const rayImg = this.assets.get(rayKey);
             if (rayImg && this.assetsLoaded.has(rayKey)) {
                 // Draw the ray sprite stretched across the whole beam
-                const beamLen = Math.max(this.W, this.H) * 2;
-                const rayH = 80;
-                this.ctx.drawImage(rayImg, 0, -rayH/2, beamLen, rayH);
+                ctx.drawImage(rayImg, 0, -baseWidth, 1500, baseWidth * 2);
             } else {
-                // Fallback gradient beam
-                const gradient = this.ctx.createLinearGradient(0,-20,0,20);
-                gradient.addColorStop(0,'rgba(239,68,68,0)');
-                gradient.addColorStop(0.5,'rgba(239,68,68,0.8)');
-                gradient.addColorStop(1,'rgba(239,68,68,0)');
-                this.ctx.fillStyle = gradient;
-                this.ctx.fillRect(0,-40,2000,80);
-                this.ctx.fillStyle='#fff'; this.ctx.fillRect(0,-5,2000,10);
+                // Fallback gradient beam if no sprite
             }
-            this.ctx.restore();
+
+            const g1 = ctx.createLinearGradient(0, -baseWidth, 0, baseWidth);
+            g1.addColorStop(0, 'rgba(255,50,50,0)'); g1.addColorStop(0.5, 'rgba(255,50,50,0.6)'); g1.addColorStop(1, 'rgba(255,50,50,0)');
+            ctx.fillStyle = g1; ctx.fillRect(0, -baseWidth, 1500, baseWidth*2);
+            
+            const g2 = ctx.createLinearGradient(0, -baseWidth/2, 0, baseWidth/2);
+            g2.addColorStop(0, 'rgba(255,255,255,0)'); g2.addColorStop(0.5, 'rgba(255,255,255,0.9)'); g2.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = g2; ctx.fillRect(0, -baseWidth/2, 1500, baseWidth);
+            
+            ctx.restore();
         }
 
         // Boss sprite
-        const bossImg = this.assets.get('boss');
-        const size = 180, stretchW = size*1.35;
-        let bx = this.bossX, by = this.bossY;
         if (this.bossShake > 0) {
             bx += (Math.random()-0.5)*this.bossShake*5;
             by += (Math.random()-0.5)*this.bossShake*5;
             this.bossShake -= 0.1;
         }
-        if (bossImg && this.assetsLoaded.has('boss')) {
-            this.ctx.drawImage(bossImg, bx-stretchW/2, by-size/2, stretchW, size);
-        } else {
-            this.ctx.fillStyle='#ef4444'; this.ctx.beginPath();
-            this.ctx.arc(bx,by,50,0,Math.PI*2); this.ctx.fill();
+        if (renderObj) ctx.drawImage(renderObj, bx-rw/2, by-rh/2, rw, rh);
+        else { ctx.beginPath(); ctx.arc(bx,by,60,0,Math.PI*2); ctx.fillStyle='#ef4444'; ctx.fill(); }
+
+        // Lasers
+        for (const laser of this.lasers) {
+            ctx.save(); ctx.translate(laser.x, laser.y); ctx.rotate(laser.angle);
+            const alpha = laser.isWarning ? (Math.sin(laser.life*10)*0.5+0.5)*0.6 : 1.0;
+            const color = laser.isWarning ? '255, 255, 0' : '255, 0, 0';
+            const width = laser.isWarning ? laser.width*0.5 : laser.width;
+            const gOuter = ctx.createLinearGradient(0, -width, 0, width);
+            gOuter.addColorStop(0, `rgba(${color},0)`); gOuter.addColorStop(0.5, `rgba(${color},${alpha*0.4})`); gOuter.addColorStop(1, `rgba(${color},0)`);
+            ctx.fillStyle = gOuter; ctx.fillRect(0, -width, 2000, width*2);
+            const gInner = ctx.createLinearGradient(0, -width*0.6, 0, width*0.6);
+            gInner.addColorStop(0, `rgba(${color},0)`); gInner.addColorStop(0.5, `rgba(${color},${alpha*0.8})`); gInner.addColorStop(1, `rgba(${color},0)`);
+            ctx.fillStyle = gInner; ctx.fillRect(0, -width*0.6, 2000, width*1.2);
+            ctx.restore();
         }
     }
 

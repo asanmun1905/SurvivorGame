@@ -145,6 +145,18 @@ const DOM = {
     inputObstaculos: get('input-obstaculos') as HTMLInputElement,
     inputVelocidad: get('input-velocidad') as HTMLInputElement,
     valVelocidad: get('val-velocidad'),
+    
+    // ── Mastery Overlay
+    btnMastery: get('btn-mastery') as HTMLButtonElement,
+    masteryOverlay: get('mastery-overlay'),
+    btnCloseMastery: get('close-mastery') as HTMLButtonElement,
+    essenceVal: get('essence-val'),
+    masteryTooltip: get('mastery-tooltip'),
+    mToolName: get('m-tool-name'),
+    mToolDesc: get('m-tool-desc'),
+    mToolPrice: get('m-tool-price'),
+    mToolBuy: get('m-tool-buy') as HTMLButtonElement,
+
     // Boss HUD
     bossHud: get('boss-hud'),
     bossHpFill: get('boss-hp-fill'),
@@ -178,7 +190,96 @@ const SKILL_NAMES: Record<ClaseWave, string> = {
     arquero: 'Lluvia de Flechas'
 };
 
-/** ─────────────────── HELPERS ─────────────────── */
+/** ─────────────────── MASTERY STATE ─────────────────── */
+interface MasteryNodeDef {
+    name: string;
+    desc: string;
+    maxLevel: number;
+    baseCost: number;
+    scaling: number;
+}
+
+const MASTERY_DEFS: Record<string, MasteryNodeDef> = {
+    primordial: { name: 'Esencia Primordial', desc: 'El inicio de tu camino hacia la maestría.', maxLevel: 1, baseCost: 0, scaling: 0 },
+    hp: { name: 'Vitalidad Oscura', desc: '+5% Vida Máxima por nivel.', maxLevel: 20, baseCost: 5, scaling: 1.5 },
+    damage: { name: 'Fuerza Sombría', desc: '+5% Daño por nivel.', maxLevel: 20, baseCost: 5, scaling: 1.5 },
+    atkSpd: { name: 'Celeridad de Sombras', desc: '+10% Vel. Ataque por nivel.', maxLevel: 10, baseCost: 10, scaling: 2.0 },
+    movSpd: { name: 'Agilidad Etérea', desc: '+5% Vel. Movimiento por nivel.', maxLevel: 10, baseCost: 8, scaling: 1.8 },
+    reflex: { name: 'Reflejos Espectrales', desc: '+0.2s Invulnerabilidad por nivel.', maxLevel: 5, baseCost: 15, scaling: 2.5 },
+    cooldown: { name: 'Enfoque Profundo', desc: '-7% Cooldown de Hab. por nivel.', maxLevel: 10, baseCost: 12, scaling: 2.2 },
+    luck: { name: 'Fortuna Oscura', desc: '+0.1% Prob. de Soltar Mejora.', maxLevel: 3, baseCost: 25, scaling: 3.0 },
+    revive: { name: 'Resurrección Umbría', desc: 'Revive con 50% HP una vez por partida.', maxLevel: 2, baseCost: 50, scaling: 5.0 }
+};
+
+let essence: number = 0;
+let masteryLevels: Record<string, number> = {
+    primordial: 1, hp: 0, damage: 0, atkSpd: 0, movSpd: 0, reflex: 0, cooldown: 0, luck: 0, revive: 0
+};
+
+function loadMastery(): void {
+    const savedEss = localStorage.getItem('hd_essence');
+    const savedLevels = localStorage.getItem('hd_mastery');
+    if (savedEss) essence = parseInt(savedEss);
+    if (savedLevels) {
+        try {
+            const parsed = JSON.parse(savedLevels);
+            masteryLevels = { ...masteryLevels, ...parsed };
+        } catch(e) { console.error("Error loading mastery", e); }
+    }
+}
+
+function saveMastery(): void {
+    localStorage.setItem('hd_essence', essence.toString());
+    localStorage.setItem('hd_mastery', JSON.stringify(masteryLevels));
+}
+
+function refreshMasteryUI(): void {
+    DOM.essenceVal.textContent = essence.toString();
+    document.querySelectorAll<HTMLElement>('.mastery-node').forEach(node => {
+        const id = node.dataset.node as string;
+        if (!id) return;
+        const level = masteryLevels[id] || 0;
+        const def = MASTERY_DEFS[id];
+        const levelText = node.querySelector('.node-level');
+        if (levelText) {
+            if (def.maxLevel === 1) levelText.textContent = `${level}/1`;
+            else levelText.innerHTML = `<span class="cur">${level}</span>/${def.maxLevel}`;
+        }
+        if (level > 0) node.classList.add('active');
+        else node.classList.remove('active');
+    });
+}
+
+function getMasteryCost(id: string): number {
+    const def = MASTERY_DEFS[id];
+    const curLevel = masteryLevels[id] || 0;
+    if (curLevel >= def.maxLevel) return 999999;
+    return Math.floor(def.baseCost * Math.pow(def.scaling, curLevel));
+}
+
+let selectedMasteryNode: string | null = null;
+
+function openMasteryTooltip(id: string): void {
+    selectedMasteryNode = id;
+    const def = MASTERY_DEFS[id];
+    const curLevel = masteryLevels[id] || 0;
+    DOM.mToolName.textContent = def.name;
+    DOM.mToolDesc.textContent = def.desc;
+    
+    if (curLevel >= def.maxLevel) {
+        DOM.mToolPrice.textContent = "MAX";
+        DOM.mToolBuy.disabled = true;
+        DOM.mToolBuy.textContent = "Nivel Máximo";
+    } else {
+        const cost = getMasteryCost(id);
+        DOM.mToolPrice.textContent = cost.toString();
+        DOM.mToolBuy.disabled = essence < cost;
+        DOM.mToolBuy.textContent = "Mejorar";
+    }
+    DOM.masteryTooltip.classList.remove('hidden');
+}
+
+/** ─────────────────── GAME MODES ─────────────────── */
 function getConfig() {
     return {
         ancho: Math.max(5, parseInt(DOM.inputAncho.value) || 20),
@@ -222,6 +323,7 @@ function hideSidebars() {
     DOM.btnToggleSimSidebar.classList.add('hidden');
     DOM.btnToggleOleadasShop.classList.add('hidden');
     DOM.app.style.paddingRight = '0';
+    document.body.classList.remove('sidebar-open');
 }
 
 function enterGameScreen() {
@@ -244,6 +346,9 @@ function irAlMenu() {
     DOM.gameScreen.classList.add('hidden');
     DOM.waveEndOverlay.classList.add('hidden');
     DOM.mainMenu.classList.remove('hidden');
+    DOM.waveHud.classList.add('hidden');
+    DOM.bossHud.classList.add('hidden');
+    DOM.bhHud.classList.add('hidden');
     hideSidebars();
 }
 
@@ -278,6 +383,17 @@ function updateWaveGold(g: number) {
     DOM.waveEndGoldDisplay.textContent = g.toString();
 }
 
+function formatTime(seconds: number): string {
+    const s = Math.floor(seconds);
+    if (s < 60) return `${s}seg`;
+    const m = Math.floor(s / 60);
+    const rs = s % 60;
+    if (m < 60) return `${m}m ${rs}seg`;
+    const h = Math.floor(m / 60);
+    const rm = m % 60;
+    return `${h}h ${rm}m ${rs}seg`;
+}
+
 /** ─────────────────── MODE: SIMULACIÓN ─────────────────── */
 async function arrancarSimulacion() {
     gameMode = 'sim';
@@ -307,6 +423,7 @@ async function arrancarSimulacion() {
     DOM.simSidebar.classList.remove('hidden');
     DOM.btnToggleSimSidebar.classList.remove('hidden');
     DOM.app.style.paddingRight = '260px';
+    document.body.classList.add('sidebar-open');
     DOM.btnRunSimulation.style.display = '';
     DOM.btnPauseSimulation.style.display = 'none';
 }
@@ -365,6 +482,7 @@ function arrancarPlayableSandboxGrid() {
     DOM.hudBestias.classList.add('hidden');
     DOM.psbSidebar.classList.remove('hidden');
     DOM.app.style.paddingRight = '260px';
+    document.body.classList.add('sidebar-open');
 
     const cw = Math.max(10, parseInt(DOM.inputPsbAncho.value) || 20) * 60;
     const ch = Math.max(10, parseInt(DOM.inputPsbAlto.value) || 12) * 60;
@@ -377,14 +495,19 @@ function arrancarPlayableSandboxGrid() {
              DOM.waveHpFill.style.width = `${pct}%`;
              DOM.waveHpFill.className = 'wave-hp-fill' + (pct < 25 ? ' low' : pct < 50 ? ' mid' : '');
         },
-        onKillsChange: (k) => { DOM.waveKills.textContent = k.toString(); },
+        onKillsChange: (k) => { DOM.waveKills.textContent = `Kills: ${k}`; }, // Ensure "Kills: " prefix
         onEnemiesChange: (n) => { DOM.waveEnemies.textContent = n.toString(); },
-        onGameOver: (kills) => { showEndScreen(`FIN DEL SANDBOX (Kills: ${kills})`); },
+        onGameOver: (kills) => {
+            // After sandbox game over, allow retry back to setup
+            saveGameResults(0, kills); // Sandbox gives no essence usually
+            showEndScreen(`FIN DEL SANDBOX (Kills: ${kills})`);
+        },
         onSkillCooldown: (_ready, pct) => {
              DOM.skillCdFill.style.width = `${(pct) * 100}%`;
              if (pct <= 0) DOM.skillReady.classList.remove('hidden');
              else DOM.skillReady.classList.add('hidden');
         },
+        onStatusMsg: (msg) => showBanner(msg),
         onBossHpChange: (hp, max, visible) => {
              if (visible) {
                   DOM.bossHud.classList.remove('hidden');
@@ -394,10 +517,20 @@ function arrancarPlayableSandboxGrid() {
                   DOM.bossHud.classList.add('hidden');
              }
         }
-    });
+    }, masteryLevels);
 
-    psbMotor.setCellSize(60);
-    psbMotor.drawSetup();
+    if (psbMotor) {
+        psbMotor.setCellSize(60);
+        psbMotor.drawSetup();
+    }
+}
+
+function saveGameResults(ess: number, _kills: number) {
+    if (ess > 0) {
+        essence += ess;
+        saveMastery();
+        showBanner(`+${ess} ESENCIA`);
+    }
 }
 
 function iniciarPlayableSandboxRutina() {
@@ -406,11 +539,16 @@ function iniciarPlayableSandboxRutina() {
     DOM.app.style.paddingRight = '0';
     DOM.waveHud.classList.remove('hidden');
     DOM.skillName.textContent = SKILL_NAMES[psbSelectedClass];
-    DOM.waveKills.textContent = '0';
-    // hide unneeded elements in waveHud for sandbox
-    get('hud-gold').style.display = 'none';
-    get('wave-num').parentElement!.style.display = 'none';
-    get('wave-time').parentElement!.style.display = 'none';
+    DOM.waveKills.textContent = 'Kills: 0';
+    DOM.waveGoldHud.textContent = '0';
+    DOM.waveNum.textContent = '1';
+    DOM.waveTime.textContent = '0s';
+    
+    // Simulation mode shouldn't show gold, waves or time by default as requested
+    get('hud-gold').parentElement!.style.display = 'none';
+    DOM.waveGoldHud.style.display = 'none';
+    DOM.waveNum.parentElement!.style.display = 'none';
+    DOM.waveTime.parentElement!.style.display = 'none';
     
     const claseBaseStats = CLASES_STATS[psbSelectedClass];
     const bonusHp = parseInt(DOM.inputPsbHp.value) || 0;
@@ -420,7 +558,7 @@ function iniciarPlayableSandboxRutina() {
          hp: claseBaseStats.hp + bonusHp,
          damage: claseBaseStats.damage + bonusDmg,
          speed: claseBaseStats.speed, x: 0, y: 0
-    });
+    }, masteryLevels);
 }
 function arrancarOleadas(clase: ClaseWave) {
     gameMode = 'oleadas';
@@ -442,8 +580,10 @@ function arrancarOleadas(clase: ClaseWave) {
     DOM.oleadasSidebar.classList.remove('hidden');
     DOM.btnToggleOleadasShop.classList.remove('hidden');
     DOM.app.style.paddingRight = '260px';
+    document.body.classList.add('sidebar-open');
 
     stopAllEngines();
+    loadMastery(); // Ensure latest mastery is loaded
 
     waveMotor = new WaveGame(DOM.canvas, clase, {
         onWaveChange: (n) => {
@@ -458,9 +598,11 @@ function arrancarOleadas(clase: ClaseWave) {
         },
         onKillsChange: (k) => { DOM.waveKills.textContent = k.toString(); },
         onGoldChange: (g) => { updateWaveGold(g); refreshShopCosts(); },
-        onTimeChange: (t) => { DOM.waveTime.textContent = Math.floor(t).toString(); },
+        onTimeChange: (t) => { DOM.waveTime.textContent = formatTime(t); },
         onEnemiesChange: (n) => { DOM.waveEnemies.textContent = n.toString(); },
         onGameOver: (kills) => {
+            const ess = waveMotor?.getPlayer().essenceGained || 0;
+            saveGameResults(ess, kills);
             showEndScreen(`LAS BESTIAS HAN GANADO (Kills: ${kills})`);
         },
         onWaveEnd: (_oleada, gold) => {
@@ -585,6 +727,42 @@ DOM.btnStart.onclick = () => DOM.sandboxChoiceOverlay.classList.remove('hidden')
 DOM.btnOleadas.onclick = () => { stopAllEngines(); DOM.classSelectOverlay.classList.remove('hidden'); };
 DOM.btnBulletHell.onclick = () => { stopAllEngines(); DOM.bhDiffOverlay.classList.remove('hidden'); };
 
+// Mastery
+DOM.btnMastery.onclick = () => {
+    loadMastery();
+    refreshMasteryUI();
+    DOM.masteryOverlay.classList.remove('hidden');
+};
+DOM.btnCloseMastery.onclick = () => {
+    DOM.masteryOverlay.classList.add('hidden');
+    DOM.masteryTooltip.classList.add('hidden');
+    selectedMasteryNode = null;
+};
+DOM.mToolBuy.onclick = () => {
+    if (!selectedMasteryNode) return;
+    const cost = getMasteryCost(selectedMasteryNode);
+    if (essence >= cost) {
+        essence -= cost;
+        masteryLevels[selectedMasteryNode]++;
+        saveMastery();
+        refreshMasteryUI();
+        openMasteryTooltip(selectedMasteryNode); // update tooltip state
+    }
+};
+document.querySelectorAll<HTMLElement>('.mastery-node').forEach(node => {
+    node.onclick = (e) => {
+        e.stopPropagation();
+        const id = node.dataset.node as string;
+        if (id) openMasteryTooltip(id);
+    };
+});
+DOM.masteryOverlay.onclick = (e) => {
+    if (e.target === DOM.masteryOverlay) {
+        DOM.masteryTooltip.classList.add('hidden');
+        selectedMasteryNode = null;
+    }
+};
+
 // Sandbox Choice
 DOM.btnChoiceSim.onclick = () => {
     DOM.sandboxChoiceOverlay.classList.add('hidden');
@@ -630,6 +808,9 @@ DOM.overlayRestartBtn.onclick = () => {
     DOM.statusOverlay.classList.add('hidden');
     if (gameMode === 'oleadas') { DOM.classSelectOverlay.classList.remove('hidden'); DOM.gameScreen.classList.add('hidden'); DOM.mainMenu.classList.remove('hidden'); }
     else if (gameMode === 'bullethell') { DOM.bhDiffOverlay.classList.remove('hidden'); DOM.gameScreen.classList.add('hidden'); DOM.mainMenu.classList.remove('hidden'); }
+    else if (gameMode === 'sandbox-jugable') {
+        arrancarPlayableSandboxGrid();
+    }
     else arrancarSimulacion();
 };
 

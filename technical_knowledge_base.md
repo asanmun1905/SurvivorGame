@@ -37,10 +37,15 @@ The primary "Survival" loop where the player fights waves of enemies, levels up,
 - **Skill System**: Each class has a unique "Ultimate" (e.g., Archer's Colossal Arrow).
 - **AoE Implementation**: Visualized by semi-transparent colored shapes that vanish after a short lifetime.
 
-### Economy (The Shop)
-- Enemies drop Gold.
-- Shop allows upgrading Max HP, Damage, Speed, and Gold/XP Gain Multipliers.
-- Consumables: Potions (Full Heal) and Shields.
+### Economy, Mastery & Progression
+- **Currency**:
+  - **Gold**: Dropped by all enemies. Used for in-game wave upgrades (HP, Damage, etc.).
+  - **Essence**: Rare drops from enemies (higher chance for Bosses). Indicators are purple. Used for permanent Shadow Mastery upgrades.
+- **Shadow Mastery System**:
+  - Persistent progression via a 3x3 grid of 9 unique nodes.
+  - **State**: Saved to `localStorage` (`hd_essence`, `hd_mastery`).
+  - **Core Mechanic - Resurrección Umbría**: Allows a one-time revive with 50% HP and temporary invulnerability.
+- **Shop Integration**: Dynamic cost scaling based on current upgrade levels.
 
 ---
 
@@ -73,8 +78,14 @@ A specialized mode focused on precision dodging.
 - **Automatic Sheet Detection**: The drawing logic (`drawSprite`) checks if `img.width > img.height * 1.2`.
 - **Clipping Logic**: If a sheet is detected, it calculates frame width based on height (assuming square frames) and clips using `this.frame % cols`.
 - **Asset Paths**: 
-  - Player: `assets/BuenoMelee/Sprites/`
-  - Projectiles: `assets/weapons/flecha.png`
+- Player: `assets/BuenoMelee/Sprites/`
+- Bosses: `assets/bosses/BeholderFrame1.png` to `BeholderFrame12.png`.
+- Projectiles: `assets/weapons/flecha.png` and `assets/bosses/Ray1.png` to `Ray8.png`.
+
+### Boss Animation Logic
+- **Beholder Animation**: Uses a 12-frame loop (`% 12`) to provide fluid movement.
+- **Rendering Normalization**: To prevent "twitching" from inconsistent asset resolutions (e.g., 677x369 vs 145x125), all frames are scaled to a consistent `targetW` (180px) while maintaining their natural aspect ratio and being centered on the boss coordinates.
+- **Ray Synchronization**: The plasma beam animation is driven by the boss's current frame state, ensuring visual consistency between the eye glow and the beam.
 
 ---
 
@@ -88,11 +99,13 @@ A specialized mode focused on precision dodging.
   ```
   Calculated using the projection onto the perpendicular of the laser's angle.
 
-### Player Animation State Machine
-Synchronized across modes using:
-- **State**: `idle` / `run`.
-- **MoveMode**: `up`, `down`, or `horizontal` (based on movement vectors).
-- **Direction**: `1` (right) or `-1` (left).
+### Player Animation & Rendering
+- **Robust Sprite Fallback**: To prevent visual glitches (like colored circles) during rapid direction changes, the rendering engine priorities finding an `idle` sprite if the intended animation frame isn't yet loaded or available.
+- **State Details**:
+  - **State**: `idle` / `run` / `attack`.
+  - **MoveMode**: `up`, `down`, or `horizontal`.
+  - **Direction**: `1` (right) or `-1` (left).
+- **Frame Reset**: Player frame is reset to 0 immediately upon change of state or move mode for responsive transitions.
 
 ### Screen Shake Implementation
 ```typescript

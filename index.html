@@ -9,7 +9,7 @@
   <meta name="description" content="Hopeless Despair — Dark Fantasy simulation game." />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=MedievalSharp&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=MedievalSharp&family=Inter:wght@400;500;600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./src/style.css" />
 </head>
 
@@ -37,7 +37,13 @@
           <p>WASD / ↑↓←→ para moverte. Esquiva las balas. Sobrevive.</p>
         </div>
       </div>
-      <button id="btn-settings" class="menu-btn-sm">⚙️ Ajustes</button>
+      <div class="menu-actions" style="display:flex; gap:1.5rem; justify-content:center; align-items:center; margin-top:2rem;">
+        <button id="btn-settings" class="menu-btn-sm">⚙️ Ajustes</button>
+        <button id="btn-mastery" class="mastery-btn" title="Maestría de las Sombras">
+          <span class="icon">🔱</span>
+          <span class="text">Maestría</span>
+        </button>
+      </div>
     </div>
     <footer style="opacity: 0.3;"><p>Hopeless Despair — Dark Fantasy Edition © 2026</p></footer>
   </div>
@@ -339,8 +345,11 @@
             </div>
             <div class="stat"><span class="label">Oleada</span><span id="wave-num" class="value">0</span></div>
             <div class="stat"><span class="label">Enemies</span><span id="wave-enemies" class="value">0</span></div>
-            <div class="hud-item"><span id="hud-kills">0</span></div>
-            <div class="hud-item"><span id="hud-gold" class="value" style="color:#d4af37">0</span></div>
+            <div class="hud-item"><span class="label">Kills:</span><span id="hud-kills" class="value">0</span></div>
+            <div class="hud-item">
+              <img src="assets/goldsac-removebg-preview.png" alt="Gold" style="width:20px; vertical-align:middle;">
+              <span id="hud-gold" class="value" style="color:#d4af37">0</span>
+            </div>
             <div class="stat"><span class="label">Tiempo</span><span id="wave-time" class="value">0s</span></div>
             <div class="skill-cooldown-wrap" id="skill-wrap">
               <div class="skill-btn-label">[E] <span id="skill-name">Skill</span></div>
@@ -373,6 +382,89 @@
           </div>
         </div>
       </main>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════ MASTERY OVERLAY ═══════════════════════ -->
+  <div id="mastery-overlay" class="overlay hidden">
+    <div class="mastery-modal">
+      <header class="mastery-header">
+        <h2><span class="icon">🔱</span> Maestría de las Sombras</h2>
+        <div class="essence-counter">✨ Esencia: <b id="essence-val">0</b></div>
+        <button id="close-mastery" class="close-btn">&times;</button>
+      </header>
+      
+      <div class="mastery-tree-container">
+        <div class="mastery-tree">
+          <!-- Tier 0 -->
+          <div class="mastery-node root active" data-node="primordial" title="Esencia Primordial">
+            <div class="node-icon">🔮</div>
+            <div class="node-level">1/1</div>
+          </div>
+          
+          <!-- Connections and nodes will be styled in CSS -->
+          <div class="mastery-row">
+            <div class="mastery-node" data-node="hp" title="Vitalidad Oscura">
+              <div class="node-icon">❤️</div>
+              <div class="node-level"><span class="cur">0</span>/20</div>
+            </div>
+            <div class="mastery-node" data-node="damage" title="Fuerza Sombría">
+              <div class="node-icon">⚔️</div>
+              <div class="node-level"><span class="cur">0</span>/20</div>
+            </div>
+          </div>
+
+          <div class="mastery-row">
+            <div class="mastery-node" data-node="atkSpd" title="Celeridad de Sombras">
+              <div class="node-icon">⚡</div>
+              <div class="node-level"><span class="cur">0</span>/10</div>
+            </div>
+          </div>
+
+          <div class="mastery-row">
+            <div class="mastery-node" data-node="movSpd" title="Agilidad Etérea">
+              <div class="node-icon">👟</div>
+              <div class="node-level"><span class="cur">0</span>/10</div>
+            </div>
+            <div class="mastery-node" data-node="reflex" title="Reflejos Espectrales">
+              <div class="node-icon">🛡️</div>
+              <div class="node-level"><span class="cur">0</span>/5</div>
+            </div>
+          </div>
+
+          <div class="mastery-row">
+            <div class="mastery-node" data-node="cooldown" title="Enfoque Profundo">
+              <div class="node-icon">⌛</div>
+              <div class="node-level"><span class="cur">0</span>/10</div>
+            </div>
+          </div>
+
+          <div class="mastery-row">
+            <div class="mastery-node" data-node="luck" title="Fortuna Oscura">
+              <div class="node-icon">🍀</div>
+              <div class="node-level"><span class="cur">0</span>/3</div>
+            </div>
+          </div>
+
+          <div class="mastery-row">
+            <div class="mastery-node" data-node="revive" title="Resurrección Umbría">
+              <div class="node-icon">👼</div>
+              <div class="node-level"><span class="cur">0</span>/2</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div id="mastery-tooltip" class="mastery-tooltip hidden">
+        <h3 id="m-tool-name">Nombre</h3>
+        <p id="m-tool-desc">Descripción</p>
+        <div class="m-tool-cost">Costo: <span id="m-tool-price">0</span> ✨</div>
+        <button id="m-tool-buy" class="apply-btn">Mejorar</button>
+      </div>
+
+      <footer class="mastery-footer">
+        Los nodos iluminados proveen bonificaciones permanentes en todos los modos.
+      </footer>
     </div>
   </div>
 

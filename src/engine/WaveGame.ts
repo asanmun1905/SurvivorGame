@@ -16,7 +16,8 @@ import malo2ImgUrl from '../../assets/MaloRango/Necromancer_creativekind-Sheet.p
 import buenoImgUrl from '../../assets/BuenoMelee/Sprites/IdleFront.png';
 import arrowImgUrl from '../../assets/weapons/flecha.png';
 import obsImgUrl from '../../assets/Obstacle/82cfbcc1-c0ad-4c07-91ae-ca682d039cb1_unnamed_1_-removebg-preview.png';
-import bossImgUrl from '../../assets/bosses/WhatsApp_Image_2026-03-15_at_13.38.28-removebg-preview.png';
+import bossImgUrl from '../../assets/bosses/BeholderFrame1.png';
+import goldsacImgUrl from '../../assets/goldsac-removebg-preview.png';
 
 // Import Mallomelee frames
 const MALO_MELEE_ASSETS = {
@@ -99,6 +100,7 @@ const BUENO_MELEE_ASSETS = {
 };
 
 const BOSS_RAY_ASSETS = import.meta.glob('../../assets/bosses/Ray*.png', { eager: true, as: 'url' });
+const BOSS_FRAMES = import.meta.glob('../../assets/bosses/BeholderFrame*.png', { eager: true, as: 'url' });
 
 // ─────────────────── Types ───────────────────
 export type ClaseWave = 'guerrero' | 'arquero';
@@ -201,7 +203,14 @@ export const ALL_BUFFS: BuffDef[] = [
     { type: 'mark', label: 'Marca', desc: 'Los enemigos marcados reciben más daño.', icon: '🎯', classRestrict: 'arquero' }
 ];
 
-export interface Projectile {
+export interface BossLaser {
+    x: number; y: number;
+    angle: number; width: number;
+    life: number; maxLife: number;
+    isWarning: boolean;
+}
+
+interface Projectile {
     x: number; y: number;
     tx: number; ty: number; // target when fired
     vx: number; vy: number;
@@ -241,10 +250,19 @@ interface Player {
     invincible: boolean;
     invincibleTimer: number;
     shield: number;
-    // New stats
+    
+    // Mastery
+    mastery: Record<string, number>;
+    essenceGained: number;
+    revived: boolean;
+    
+    // XP / Leveling (internal to session)
+    exp: number;
+    level: number;
     goldMult: number;
     expMult: number;
-    exp: number;
+
+    // Movement / Animation state
     isMouseDown: boolean;
     // Buffs active
     buffs: Set<BuffType>;
@@ -294,6 +312,8 @@ export class WaveGame {
     // Assets
     private assets: Map<string, HTMLImageElement> = new Map();
     private assetsLoaded: Set<string> = new Set();
+    private tintCanvas = document.createElement('canvas');
+    private tintCtx = this.tintCanvas.getContext('2d', {willReadFrequently: true})!;
 
     // State
     private player!: Player;
@@ -312,7 +332,6 @@ export class WaveGame {
     private waveStartTimer: number = 0;
     private isSpawning: boolean = false;
     private readonly WAVE_INTERVAL = 20;
-    private bossImg: HTMLImageElement | null = null;
     private bossActive: boolean = false;
     private bossHp: number = 0;
     private bossMaxHp: number = 0;
@@ -328,6 +347,7 @@ export class WaveGame {
     private bossFrame: number = 0;
     private bossFrameTimer: number = 0;
     private screenshake: number = 0;
+    private lasers: BossLaser[] = [];
 
     // Upgrades state
     private upgradesBought: Record<string, number> = {
@@ -355,7 +375,7 @@ export class WaveGame {
 
     private callbacks: WaveCallbacks;
 
-    constructor(canvas: HTMLCanvasElement, claseKey: ClaseWave, callbacks: WaveCallbacks) {
+    constructor(canvas: HTMLCanvasElement, claseKey: ClaseWave, callbacks: WaveCallbacks, mastery?: Record<string, number>) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d')!;
         this.W = canvas.width;
@@ -366,7 +386,7 @@ export class WaveGame {
         this.clase = CLASES_STATS[claseKey];
 
         this.loadAssets();
-        this.initPlayer();
+        this.initPlayer(mastery);
 
         this.keyDownHandler = (e: KeyboardEvent) => {
             this.keys[e.key.toLowerCase()] = true;
@@ -394,7 +414,7 @@ export class WaveGame {
 
     private loadAssets(): void {
         const map: Record<string, string> = {
-            bg: bgImgUrl, malo: maloImgUrl, malo2: malo2ImgUrl, bueno: buenoImgUrl, flecha: arrowImgUrl, obstaculo: obsImgUrl, boss: bossImgUrl
+            bg: bgImgUrl, malo: maloImgUrl, malo2: malo2ImgUrl, bueno: buenoImgUrl, flecha: arrowImgUrl, obstaculo: obsImgUrl, boss: bossImgUrl, goldsac: goldsacImgUrl
         };
         for (const [k, src] of Object.entries(map)) {
             const img = new Image();
@@ -411,7 +431,15 @@ export class WaveGame {
             img.onload = () => this.assetsLoaded.add(`boss_ray_${i}`);
             this.assets.set(`boss_ray_${i}`, img);
         });
-        this.bossImg = this.assets.get('boss')!; // Assign bossImg from the loaded assets map
+        
+        // Load Boss Beholder animation
+        const bossFrameKeys = Object.keys(BOSS_FRAMES).sort();
+        bossFrameKeys.forEach((key, i) => {
+            const img = new Image();
+            img.src = (BOSS_FRAMES[key] as any);
+            img.onload = () => this.assetsLoaded.add(`boss_frame_${i}`);
+            this.assets.set(`boss_frame_${i}`, img);
+        });
 
         // Load melee animations
         const meleeFrames = [
@@ -441,29 +469,42 @@ export class WaveGame {
         }
     }
 
-    private initPlayer(): void {
+    private initPlayer(mastery?: Record<string, number>): void {
         const c = this.clase;
+        const m = mastery || { hp: 0, damage: 0, atkSpd: 0, movSpd: 0, reflex: 0, cooldown: 0, luck: 0, revive: 0 };
+        
+        // Apply mastery bonuses
+        const hpBoost = 1 + (m.hp || 0) * 0.05;
+        const dmgBoost = 1 + (m.damage || 0) * 0.05;
+        const speedBoost = 1 + (m.movSpd || 0) * 0.05;
+        const cdReduction = Math.max(0.3, 1 - (m.cooldown || 0) * 0.07);
+
         this.player = {
             x: this.W / 2, y: this.H / 2,
-            hp: c.hp, maxHp: c.hp,
-            speed: c.speed, damage: c.damage,
+            hp: c.hp * hpBoost, maxHp: c.hp * hpBoost,
+            speed: c.speed * speedBoost, 
+            damage: c.damage * dmgBoost,
             attackRange: c.attackRange,
-            attackCooldown: c.attackCooldown,
+            attackCooldown: c.attackCooldown * (1 / (1 + (m.atkSpd || 0) * 0.1)),
             attackTimer: 0,
-            skillCooldown: c.skillCooldown,
+            skillCooldown: c.skillCooldown * cdReduction,
             skillTimer: 0,
             skillActive: false, skillActiveTimer: 0,
             kills: 0, gold: 100,
             dmgBoost: 1, speedBoost: 1,
             invincible: false, invincibleTimer: 0,
             shield: 0,
+            mastery: m,
+            essenceGained: 0,
+            revived: false,
             goldMult: 1,
             expMult: 1,
             exp: 0,
+            level: 1,
             isMouseDown: false,
             buffs: new Set(),
             stats: {
-                critChance: 0,
+                critChance: (m.luck || 0) * 0.02,
                 lifeSteal: 0,
                 defense: 0,
                 penetration: false,
@@ -691,6 +732,10 @@ export class WaveGame {
         p.frameTimer += dt;
         const fps = 10;
         
+        const oldState = p.state;
+        const oldMoveMode = p.moveMode;
+        const oldDirection = p.direction;
+
         if (p.state !== 'attack') {
             p.state = (dx !== 0 || dy !== 0) ? 'run' : 'idle';
             if (p.state === 'run') {
@@ -701,6 +746,10 @@ export class WaveGame {
                     if (Math.abs(dx) > 0.1) p.direction = dx > 0 ? 1 : -1;
                 }
             }
+        }
+
+        if (p.state !== oldState || p.moveMode !== oldMoveMode || p.direction !== oldDirection) {
+            p.frame = 0; // Reset frame on state/direction/moveMode change
         }
 
         if (p.frameTimer > 1 / fps) {
@@ -890,7 +939,7 @@ export class WaveGame {
                 const dmg = p.damage * p.dmgBoost * 3;
                 e.hp -= dmg;
                 e.hitFlash = 0.3;
-                this.spawnDamageNumber(e.x, e.y, Math.round(dmg), '#ffd700');
+                this.spawnDamageNumber(e.x, e.y, Math.round(dmg), '#ef4444');
             }
         }
         
@@ -898,15 +947,17 @@ export class WaveGame {
         if (this.clase.nombre === 'Guerrero') {
             this.spawnAoE(p.x, p.y, range, 0.5, 'rgba(239, 68, 68, 0.35)');
         } else if (this.clase.nombre === 'Arquero') {
-            // Archer skill: circular burst of arrows
+            // Archer skill: circular burst of arrows - NO immediate damage
             const arrowCount = 12;
+            const skillRange = p.attackRange * 1.5; // Lower range for skill
             for (let i = 0; i < arrowCount; i++) {
                 const angle = (i / arrowCount) * Math.PI * 2;
-                const tx = p.x + Math.cos(angle) * 100;
-                const ty = p.y + Math.sin(angle) * 100;
+                const tx = p.x + Math.cos(angle) * skillRange;
+                const ty = p.y + Math.sin(angle) * skillRange;
                 this.fireProjectileAt(p.x, p.y, tx, ty, p.damage * p.dmgBoost * 2, true, 'flecha', 1.5);
             }
-            // No AoE visual as requested
+            // Quick yellow flash instead of lingering circle
+            this.spawnAoE(p.x, p.y, skillRange, 0.2, 'rgba(254, 240, 138, 0.25)');
         }
         
         this.cleanDeadEnemies();
@@ -1020,14 +1071,13 @@ export class WaveGame {
                             dmg = Math.round(dmg * 10) / 10;
                             p.hp = Math.round((p.hp - Math.max(0, dmg)) * 10) / 10;
                             p.invincible = true;
-                            p.invincibleTimer = 0.5;
+                            p.invincibleTimer = 0.5 + (this.player.mastery.reflex || 0) * 0.2;
                             this.callbacks.onHpChange(p.hp, p.maxHp);
                             this.spawnDamageNumber(p.x - 20, p.y - 30, dmg, '#ef4444');
 
                             if (p.hp <= 0) {
-                                this.running = false;
-                                this.draw();
-                                setTimeout(() => this.callbacks.onGameOver(p.kills, this.wave), 300);
+                                this.handlePlayerDeath();
+                                break;
                             }
                         }
                     }
@@ -1160,7 +1210,7 @@ export class WaveGame {
                     if (this.player.stats.poison) e.poisonTimer = 4.0;
                     if (this.player.stats.mark) e.marked = true;
 
-                    this.spawnDamageNumber(e.x, e.y - 10, Math.round(dmg), '#fde047');
+                    this.spawnDamageNumber(e.x, e.y - 10, Math.round(dmg), '#ef4444');
                     
                     if (this.player.stats.lifeSteal > 0) {
                         this.player.hp = Math.round(Math.min(this.player.maxHp, this.player.hp + dmg * this.player.stats.lifeSteal) * 10) / 10;
@@ -1170,17 +1220,7 @@ export class WaveGame {
                     if (!this.player.stats.penetration) projToRemove.add(proj);
                     if (e.hp <= 0) {
                         enemiesToRemove.add(e.id);
-                        this.player.kills++;
-                        const baseGold = e.isTank ? 15 : e.isSprinter ? 8 : 5;
-                        const gold = Math.floor((baseGold + this.wave * 2) * this.player.goldMult);
-                        this.player.gold += gold;
-                        this.player.exp += (e.isTank ? 20 : 10) * this.player.expMult;
-                        this.callbacks.onKillsChange(this.player.kills);
-                        this.callbacks.onGoldChange(this.player.gold);
-                        this.spawnDamageNumber(e.x, e.y - 30, gold, '#22c55e');
-
-                        // Drop Buff Logic
-                        this.checkBuffDrop(e);
+                        this.killEnemy(e);
                     }
                     break;
                 }
@@ -1192,7 +1232,7 @@ export class WaveGame {
                     this.bossHp -= proj.damage;
                     this.bossShake = 2;
                     this.callbacks.onBossHpChange(this.bossHp, this.bossMaxHp, true);
-                    this.spawnDamageNumber(this.bossX, this.bossY - 30, Math.round(proj.damage), '#fde047');
+                    this.spawnDamageNumber(this.bossX, this.bossY - 30, Math.round(proj.damage), '#ef4444');
                     projToRemove.add(proj);
                     if (this.bossHp <= 0) this.onBossDeath();
                 }
@@ -1206,12 +1246,13 @@ export class WaveGame {
                 const d = Math.hypot(proj.x - this.player.x, proj.y - this.player.y);
                 if (d < 15 + proj.radius) {
                     this.player.hp -= proj.damage;
+                    this.player.invincible = true;
+                    this.player.invincibleTimer = 0.5 + (this.player.mastery.reflex || 0) * 0.2;
                     this.screenshake = 1.0;
                     this.callbacks.onHpChange(this.player.hp, this.player.maxHp);
                     projToRemove.add(proj);
                     if (this.player.hp <= 0) {
-                        this.callbacks.onGameOver(this.player.kills, this.wave);
-                        this.running = false;
+                        this.handlePlayerDeath();
                         break;
                     }
                 }
@@ -1223,20 +1264,56 @@ export class WaveGame {
         this.callbacks.onEnemiesChange(this.enemies.length);
     }
 
+    private killEnemy(e: Enemy): void {
+        this.player.kills++;
+        const baseGold = e.isTank ? 15 : e.isSprinter ? 8 : 5;
+        const gold = Math.floor((baseGold + this.wave * 2) * this.player.goldMult);
+        this.player.gold += gold;
+        this.player.exp += (e.isTank ? 20 : 10) * this.player.expMult;
+        
+        // Essence Reward (Mastery integration)
+        let essProb = 0.005 + (this.player.mastery.luck || 0) * 0.002;
+        if (e.isTank) essProb *= 3;
+        if (Math.random() < essProb) {
+            const gain = 1 + (e.isTank ? 1 : 0);
+            this.player.essenceGained += gain;
+            this.spawnDamageNumber(e.x + 20, e.y - 40, gain, '#a855f7'); // Purple for essence
+        }
+
+        this.callbacks.onKillsChange(this.player.kills);
+        this.callbacks.onGoldChange(this.player.gold);
+        this.spawnDamageNumber(e.x, e.y - 30, gold, '#fde047');
+        this.checkBuffDrop(e);
+    }
+
+    private handlePlayerDeath(): void {
+        const p = this.player;
+        if (p.mastery.revive > 0 && !p.revived) {
+            p.revived = true;
+            p.hp = p.maxHp * 0.5;
+            p.invincible = true;
+            p.invincibleTimer = 3.0;
+            this.callbacks.onHpChange(p.hp, p.maxHp);
+            this.callbacks.onStatusMsg("🕯️ RESURRECCIÓN UMBRÍA");
+            this.spawnAoE(p.x, p.y, 120, 0.6, 'rgba(168, 85, 247, 0.4)');
+            return;
+        }
+
+        this.running = false;
+        this.draw();
+        setTimeout(() => this.callbacks.onGameOver(p.kills, this.wave), 300);
+    }
+
     private cleanDeadEnemies(): void {
         const before = this.enemies.length;
         this.enemies = this.enemies.filter(e => {
             if (e.hp <= 0) {
-                this.player.kills++;
-                const gold = e.isTank ? 15 : e.isSprinter ? 8 : 5;
-                this.player.gold += gold;
+                this.killEnemy(e);
                 return false;
             }
             return true;
         });
         if (this.enemies.length !== before) {
-            this.callbacks.onKillsChange(this.player.kills);
-            this.callbacks.onGoldChange(this.player.gold);
             this.callbacks.onEnemiesChange(this.enemies.length);
         }
     }
@@ -1303,7 +1380,7 @@ export class WaveGame {
         });
     }
 
-    private spawnDamageNumber(x: number, y: number, val: number, color: string = '#fde047'): void {
+    private spawnDamageNumber(x: number, y: number, val: number, color: string = '#ef4444'): void {
         this.damageNums.push({ x, y, val, life: 0.9, color });
     }
 
@@ -1397,10 +1474,27 @@ export class WaveGame {
         for (const n of this.damageNums) {
             ctx.save();
             ctx.globalAlpha = n.life / 0.9;
-            ctx.fillStyle = n.color;
-            ctx.font = 'bold 14px Inter, sans-serif';
+            ctx.font = '12px "Press Start 2P", "MedievalSharp", cursive';
             ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            // Text Stroke (Black border)
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#000';
+            ctx.strokeText(String(Math.round(n.val)), n.x, n.y);
+            
+            // Text Fill
+            ctx.fillStyle = n.color;
             ctx.fillText(String(Math.round(n.val)), n.x, n.y);
+
+            // Goldsac for gold numbers
+            if (n.color === '#fbbf24' || n.color === '#fde047') {
+                const sacImg = this.assets.get('goldsac');
+                if (sacImg && this.assetsLoaded.has('goldsac')) {
+                    const txtWidth = ctx.measureText(String(Math.round(n.val))).width;
+                    ctx.drawImage(sacImg, n.x + txtWidth/2 + 2, n.y - 12, 16, 16);
+                }
+            }
             ctx.restore();
         }
 
@@ -1471,10 +1565,17 @@ export class WaveGame {
             if (img && this.assetsLoaded.has(imgKey)) {
                 ctx.drawImage(img, p.x - SIZE / 2, p.y - SIZE / 2, SIZE, SIZE);
             } else {
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, SIZE / 2, 0, Math.PI * 2);
-                ctx.fillStyle = this.clase.color;
-                ctx.fill();
+                // ROBUST FALLBACK: Try idle sprite first, then circle
+                const fallbackKey = p.direction === 1 ? 'bueno_idle_right' : 'bueno_idle_left';
+                const fallbackImg = this.assets.get(fallbackKey);
+                if (fallbackImg && this.assetsLoaded.has(fallbackKey)) {
+                    ctx.drawImage(fallbackImg, p.x - SIZE / 2, p.y - SIZE / 2, SIZE, SIZE);
+                } else {
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, SIZE / 2, 0, Math.PI * 2);
+                    ctx.fillStyle = this.clase.color;
+                    ctx.fill();
+                }
             }
 
             // HP bar
@@ -1512,15 +1613,6 @@ export class WaveGame {
             ctx.restore();
         }
 
-        // Hit flash
-        if (e.hitFlash > 0) {
-            ctx.save();
-            ctx.globalAlpha = Math.min(1, e.hitFlash * 5);
-            ctx.fillStyle = '#ff4444';
-            ctx.fillRect(e.x - size / 2, e.y - size / 2, size, size);
-            ctx.restore();
-        }
-
         const imgKey = e.state === 'idle' ? 'malo_idle' : 
                        e.state === 'run' ? (
                            e.moveMode === 'up' ? `malo_run_up_${e.frame}` :
@@ -1531,35 +1623,50 @@ export class WaveGame {
                        
         const img = this.assets.get(imgKey);
         if (img && this.assetsLoaded.has(imgKey)) {
+            let drawX = e.x - size / 2;
+            let drawY = e.y - size / 2;
             ctx.save();
             if (e.direction === -1) {
                 ctx.translate(e.x * 2, 0);
                 ctx.scale(-1, 1);
             }
             const tint = e.isTank ? 'rgba(120,0,180,0.4)' : e.isSprinter ? 'rgba(0,200,220,0.35)' : null;
-            ctx.drawImage(img, e.x - size / 2, e.y - size / 2, size, size);
-            if (tint) {
-                ctx.save();
-                ctx.globalAlpha = 0.4;
-                ctx.fillStyle = tint;
-                ctx.fillRect(e.x - size / 2, e.y - size / 2, size, size);
-                ctx.restore();
+            
+            if (e.hitFlash > 0 || tint) {
+                this.tintCanvas.width = size;
+                this.tintCanvas.height = size;
+                this.tintCtx.clearRect(0,0,size,size);
+                this.tintCtx.drawImage(img, 0, 0, size, size);
+                this.tintCtx.globalCompositeOperation = 'source-atop';
+                if (tint) {
+                    this.tintCtx.fillStyle = tint;
+                    this.tintCtx.fillRect(0,0,size,size);
+                }
+                if (e.hitFlash > 0) {
+                    this.tintCtx.fillStyle = `rgba(255,0,0,${Math.min(1, Math.max(0, e.hitFlash*5)) * 0.6})`;
+                    this.tintCtx.fillRect(0,0,size,size);
+                }
+                this.tintCtx.globalCompositeOperation = 'source-over';
+                ctx.drawImage(this.tintCanvas, drawX, drawY);
+            } else {
+                ctx.drawImage(img, drawX, drawY, size, size);
             }
             ctx.restore();
         } else {
             ctx.beginPath();
-            ctx.arc(e.x, e.y, size / 2, 0, Math.PI * 2);
-            ctx.fillStyle = e.isTank ? '#7c3aed' : e.isSprinter ? '#06b6d4' : '#ef4444';
+            ctx.arc(e.x, e.y, size / 2.2, 0, Math.PI * 2);
+            ctx.fillStyle = e.isTank ? '#7c3aed' : (e.isSprinter ? '#06b6d4' : '#ef4444');
             ctx.fill();
         }
 
-        // HP bar
-        const barW = size + 4;
-        const filled = Math.max(0, (e.hp / e.maxHp)) * barW;
-        ctx.fillStyle = '#000000aa';
-        ctx.fillRect(e.x - barW / 2 - 1, e.y - size / 2 - 9, barW + 2, 6);
+        // Restore HP Bar
+        const barW = size * 0.8;
+        const barH = 6;
+        const filled = Math.max(0, (e.hp / e.maxHp) * barW);
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(e.x - barW / 2, e.y - size / 2 - 12, barW, barH);
         ctx.fillStyle = '#ef4444';
-        ctx.fillRect(e.x - barW / 2, e.y - size / 2 - 8, filled, 4);
+        ctx.fillRect(e.x - barW / 2, e.y - size / 2 - 12, filled, barH);
     }
 
     // ─────────────── Public Economy API ───────────────────────────────
@@ -1678,108 +1785,139 @@ export class WaveGame {
         this.waveStartTimer = 5.0; // Give some time for the victory message
     }
 
-    private drawBoss(): void {
+    private drawBoss() {
         if (!this.bossActive) return;
 
-        // 1. Draw charging effect (yellow spiral)
+        const ctx = this.ctx;
+        const frameKey = `boss_frame_${this.bossFrame}`;
+        let renderObj: HTMLImageElement | null | undefined = this.assets.get(frameKey);
+        if (!renderObj || !this.assetsLoaded.has(frameKey)) renderObj = this.assets.get('boss');
+
+        // Fixed scaling as requested to prevent twitching
+        let bx = this.bossX, by = this.bossY;
+        // Charging effect
         if (this.bossState === 'charging') {
-            const time = this.bossTimer;
-            this.ctx.save();
-            this.ctx.translate(this.bossX, this.bossY);
+            const t = this.bossTimer;
+            ctx.save(); ctx.translate(bx, by);
             for (let i = 0; i < 8; i++) {
-                const angle = time * 10 + (i / 8) * Math.PI * 2;
-                const r = (1.0 - time / 2) * 80 + 20;
-                const x = Math.cos(angle) * r;
-                const y = Math.sin(angle) * r;
-                this.ctx.fillStyle = '#facc15';
-                this.ctx.beginPath();
-                this.ctx.arc(x, y, 6, 0, Math.PI * 2);
-                this.ctx.fill();
+                const angle = t * 10 + (i / 8) * Math.PI * 2;
+                const r = (1.0 - t / 2) * 80 + 20;
+                ctx.fillStyle = '#facc15';
+                ctx.beginPath();
+                ctx.arc(Math.cos(angle) * r, Math.sin(angle) * r, 6, 0, Math.PI * 2);
+                ctx.fill();
             }
-            this.ctx.restore();
+            ctx.restore();
         }
 
         // 2. Draw Plasma Beam
         if (this.bossState === 'firing') {
-            this.ctx.save();
-            this.ctx.translate(this.bossX, this.bossY);
-            this.ctx.rotate(this.bossBeamAngle);
+            ctx.save();
+            ctx.translate(this.bossX, this.bossY);
+            ctx.rotate(this.bossBeamAngle);
             
             const time = performance.now() / 1000;
             const flicker = Math.sin(time * 60) * 5 + Math.random() * 10;
             const baseWidth = 60 + flicker;
             
             // Ray Sprite Animation
-            const imgKey = `boss_ray_${this.bossFrame}`;
+            const imgKey = `boss_ray_${(Math.floor(this.bossFrame * 8 / 12)) % 8}`;
             const rayImg = this.assets.get(imgKey);
             if (rayImg && this.assetsLoaded.has(imgKey)) {
                 const rayW = 2000;
                 const rayH = baseWidth * 2.5;
-                this.ctx.drawImage(rayImg, 0, -rayH/2, rayW, rayH);
+                ctx.drawImage(rayImg, 0, -rayH/2, rayW, rayH);
             }
 
             // Outer glow
-            const gradOuter = this.ctx.createLinearGradient(0, -baseWidth, 0, baseWidth);
+            const gradOuter = ctx.createLinearGradient(0, -baseWidth, 0, baseWidth);
             gradOuter.addColorStop(0, 'rgba(239, 68, 68, 0)');
             gradOuter.addColorStop(0.5, 'rgba(239, 68, 68, 0.4)');
             gradOuter.addColorStop(1, 'rgba(239, 68, 68, 0)');
-            this.ctx.fillStyle = gradOuter;
-            this.ctx.fillRect(0, -baseWidth, 2000, baseWidth * 2);
+            ctx.fillStyle = gradOuter;
+            ctx.fillRect(0, -baseWidth, 2000, baseWidth * 2);
             
             // Inner vibrant beam
             const innerWidth = baseWidth * 0.6;
-            const gradInner = this.ctx.createLinearGradient(0, -innerWidth, 0, innerWidth);
+            const gradInner = ctx.createLinearGradient(0, -innerWidth, 0, innerWidth);
             gradInner.addColorStop(0, 'rgba(244, 63, 94, 0)');
             gradInner.addColorStop(0.5, 'rgba(244, 63, 94, 0.8)');
             gradInner.addColorStop(1, 'rgba(244, 63, 94, 0)');
-            this.ctx.fillStyle = gradInner;
-            this.ctx.fillRect(0, -innerWidth, 2000, innerWidth * 2);
+            ctx.fillStyle = gradInner;
+            ctx.fillRect(0, -innerWidth, 2000, innerWidth * 2);
 
             // Hot Core
             const coreWidth = 8 + Math.sin(time * 40) * 4;
-            this.ctx.fillStyle = '#fff';
-            this.ctx.shadowBlur = 20;
-            this.ctx.shadowColor = '#fff';
-            this.ctx.fillRect(0, -coreWidth / 2, 2000, coreWidth);
-            this.ctx.shadowBlur = 0;
+            ctx.fillStyle = '#fff';
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#fff';
+            ctx.fillRect(0, -coreWidth / 2, 2000, coreWidth);
+            ctx.shadowBlur = 0;
 
             // Origin Glow (Boss Eye)
             const eyeGlow = 40 + Math.sin(time * 30) * 10;
-            const radGrad = this.ctx.createRadialGradient(0, 0, 5, 0, 0, eyeGlow);
+            const radGrad = ctx.createRadialGradient(0, 0, 5, 0, 0, eyeGlow);
             radGrad.addColorStop(0, '#fff');
             radGrad.addColorStop(0.4, '#ef4444');
             radGrad.addColorStop(1, 'rgba(239, 68, 68, 0)');
-            this.ctx.fillStyle = radGrad;
-            this.ctx.beginPath();
-            this.ctx.arc(0, 0, eyeGlow, 0, Math.PI * 2);
-            this.ctx.fill();
+            ctx.fillStyle = radGrad;
+            ctx.beginPath();
+            ctx.arc(0, 0, eyeGlow, 0, Math.PI * 2);
+            ctx.fill();
 
-            this.ctx.restore();
+            ctx.restore();
         }
 
         // 3. Draw Beholder Sprite
-        if (this.bossImg && this.assetsLoaded.has('boss')) {
-            const size = 180;
-            const stretchW = size * 1.35; // Stretch horizontally
-            let bx = this.bossX;
-            let by = this.bossY;
-            if (this.bossShake > 0) {
-                bx += (Math.random() - 0.5) * this.bossShake * 5;
-                by += (Math.random() - 0.5) * this.bossShake * 5;
-            }
-            this.ctx.drawImage(this.bossImg, bx - stretchW / 2, by - size / 2, stretchW, size);
+        let drawX = bx, drawY = by;
+        if (this.bossShake > 0) {
+            drawX += (Math.random() - 0.5) * this.bossShake * 5;
+            drawY += (Math.random() - 0.5) * this.bossShake * 5;
+        }
+        if (renderObj) {
+            // Normalize rendering to prevent twitching
+            // Target width ~180, maintain aspect ratio
+            const targetW = 180;
+            const aspect = renderObj.width / (renderObj.height || 1);
+            const rw = targetW;
+            const rh = targetW / aspect;
+            ctx.drawImage(renderObj, drawX - rw / 2, drawY - rh / 2, rw, rh);
         } else {
             // Placeholder
-            let bx = this.bossX;
-            let by = this.bossY;
-            if (this.bossShake > 0) {
-                bx += (Math.random() - 0.5) * this.bossShake * 5;
-                by += (Math.random() - 0.5) * this.bossShake * 5;
-            }
-            this.ctx.fillStyle = '#ef4444';
-            this.ctx.beginPath();
-            this.ctx.arc(bx, by, 50, 0, Math.PI * 2);
-            this.ctx.fill();
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath();
+            ctx.arc(drawX, drawY, 50, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 4. Draw Boss Lasers
+        for (const laser of this.lasers) {
+            ctx.save();
+            ctx.translate(laser.x, laser.y);
+            ctx.rotate(laser.angle);
+
+            const alpha = laser.isWarning ? (Math.sin(laser.life * 10) * 0.5 + 0.5) * 0.6 : 1.0;
+            const color = laser.isWarning ? 'rgba(255, 255, 0, ' : 'rgba(255, 0, 0, ';
+            const width = laser.isWarning ? laser.width * 0.5 : laser.width;
+
+            // Outer glow
+            const gradOuter = ctx.createLinearGradient(0, -width, 0, width);
+            gradOuter.addColorStop(0, color + '0)');
+            gradOuter.addColorStop(0.5, color + (alpha * 0.4) + ')');
+            gradOuter.addColorStop(1, color + '0)');
+            ctx.fillStyle = gradOuter;
+            ctx.fillRect(0, -width, this.W * 1.5, width * 2);
+            
+            // Inner vibrant beam
+            const innerWidth = width * 0.6;
+            const gradInner = ctx.createLinearGradient(0, -innerWidth, 0, innerWidth);
+            gradInner.addColorStop(0, color + '0)');
+            gradInner.addColorStop(0.5, color + (alpha * 0.8) + ')');
+            gradInner.addColorStop(1, color + '0)');
+            ctx.fillStyle = gradInner;
+            ctx.fillRect(0, -innerWidth, this.W * 1.5, innerWidth * 2);
+
+            ctx.restore();
         }
     }
 
@@ -1806,6 +1944,12 @@ export class WaveGame {
 
         this.bossTimer += dt;
         this.bossBulletHellTimer += dt;
+
+        this.bossFrameTimer += dt;
+        if (this.bossFrameTimer > 0.08) {
+            this.bossFrameTimer = 0;
+            this.bossFrame = (this.bossFrame + 1) % 12; // 12 frames for Beholder
+        }
 
         // 1. Movement logic
         if (this.bossState === 'moving') {
@@ -1836,13 +1980,7 @@ export class WaveGame {
                 this.bossBeamAngle = Math.atan2(this.player.y - this.bossY, this.player.x - this.bossX);
             }
         } else if (this.bossState === 'firing') {
-            this.bossFrameTimer += dt;
-            if (this.bossFrameTimer > 0.08) {
-                this.bossFrameTimer = 0;
-                this.bossFrame = (this.bossFrame + 1) % 8;
-            }
-
-            if (this.bossTimer > 3) {
+            if (this.bossTimer > 3.5) {
                 this.bossState = 'moving';
                 this.bossTimer = 0;
                 // Move to a new random top position
@@ -1853,7 +1991,7 @@ export class WaveGame {
                 let diff = targetAngle - this.bossBeamAngle;
                 while (diff > Math.PI) diff -= Math.PI * 2;
                 while (diff < -Math.PI) diff += Math.PI * 2;
-                this.bossBeamAngle += diff * dt * 1.5;
+                this.bossBeamAngle += diff * dt * 0.7; // Reduced turn speed for dodging
                 this.screenshake = Math.max(this.screenshake, 0.4); // Continuous slight shake
                 this.checkBeamCollision(dt);
             }
@@ -1865,6 +2003,19 @@ export class WaveGame {
             this.bossBulletHellTimer = 0;
             this.spawnBossBulletPattern();
         }
+
+        // 4. Update Boss Lasers
+        for (const laser of this.lasers) {
+            laser.life -= dt;
+            if (laser.isWarning && laser.life <= laser.maxLife / 2) { // Halfway through warning, activate
+                laser.isWarning = false;
+                this.screenshake = 1.0; // Shake when lasers activate
+            }
+            if (!laser.isWarning) {
+                this.checkLaserCollision(laser, dt);
+            }
+        }
+        this.lasers = this.lasers.filter(l => l.life > 0);
     }
 
     private checkBeamCollision(dt: number): void {
@@ -1888,12 +2039,37 @@ export class WaveGame {
         }
     }
 
+    private checkLaserCollision(laser: BossLaser, dt: number): void {
+        const p = this.player;
+        if (p.invincible || p.skillActive) return;
+
+        // Rotate player position relative to laser origin and angle
+        const cos = Math.cos(-laser.angle);
+        const sin = Math.sin(-laser.angle);
+        const px_rel = (p.x - laser.x) * cos - (p.y - laser.y) * sin;
+        const py_rel = (p.x - laser.x) * sin + (p.y - laser.y) * cos;
+
+        // Check if player is within the laser's rectangle (simplified)
+        const playerRadius = 15;
+        if (px_rel > -playerRadius && px_rel < this.W * 1.5 && // Laser extends far
+            py_rel > -laser.width / 2 - playerRadius && py_rel < laser.width / 2 + playerRadius) {
+            
+            p.hp -= 100 * dt; // Damage per second
+            this.screenshake = 1.0;
+            this.callbacks.onHpChange(p.hp, p.maxHp);
+            if (p.hp <= 0) {
+                this.callbacks.onGameOver(p.kills, this.wave);
+                this.running = false;
+            }
+        }
+    }
+
     private spawnBossBulletPattern(): void {
-        const patterns = ['circle', 'spiral', 'scatter'];
+        const patterns = ['circle', 'spiral', 'scatter', 'lasers'];
         const p = patterns[Math.floor(Math.random() * patterns.length)];
         
         const isEnraged = this.bossHp < this.bossMaxHp * 0.3;
-        const count = isEnraged ? 35 : 20;
+        const count = isEnraged ? 22 : 12; 
         const baseAngle = Math.random() * Math.PI * 2;
         
         if (p === 'circle') {
@@ -1906,13 +2082,23 @@ export class WaveGame {
                 const angle = baseAngle + (i / count) * Math.PI * 4;
                 this.fireBossProjectile(angle, 220);
             }
+        } else if (p === 'lasers') {
+            const lCount = isEnraged ? 5 : 3;
+            for (let i = 0; i < lCount; i++) {
+                const angle = baseAngle + (i / lCount) * Math.PI * 2;
+                this.lasers.push({
+                    x: this.bossX, y: this.bossY,
+                    angle: angle, width: 25,
+                    life: 1.5, maxLife: 1.5, isWarning: true
+                });
+            }
         } else {
             // Scatter at player
             const angleToPlayer = Math.atan2(this.player.y - this.bossY, this.player.x - this.bossX);
-            const scatterCount = isEnraged ? 20 : 10;
+            const scatterCount = isEnraged ? 14 : 7;
             for (let i = 0; i < scatterCount; i++) {
-                const angle = angleToPlayer + (Math.random() - 0.5) * (isEnraged ? 2.5 : 1.5);
-                this.fireBossProjectile(angle, (isEnraged ? 300 : 250) + Math.random() * 150);
+                const angle = angleToPlayer + (Math.random() - 0.5) * (isEnraged ? 2.5 : 1.5); 
+                this.fireBossProjectile(angle, (isEnraged ? 300 : 250) + Math.random() * 100);
             }
         }
     }
@@ -1928,8 +2114,8 @@ export class WaveGame {
             fromPlayer: false,
             radius: 10,
             life: 6,
-            color: '#a855f7', // Purple energy ball
-            speed: speed * 0.7, // Reduce speed as requested
+            color: '#a855f7', 
+            speed: speed * 0.7,
             rotation: angle
         });
     }

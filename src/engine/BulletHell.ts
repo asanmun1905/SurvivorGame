@@ -688,10 +688,17 @@ export class BulletHell {
                     const size = b.radius * 2.8;
                     ctx.save();
                     ctx.translate(b.x, b.y);
-                    ctx.rotate(b.rotation);
-                    // Aura/Glow
+                    // Add yellowish aura glow using a nearly invisible circle
+                    ctx.save();
                     ctx.shadowBlur = 15;
-                    ctx.shadowColor = '#fb923c'; // Faint orange aura
+                    ctx.shadowColor = '#fef08a'; // Yellowish aura
+                    ctx.beginPath();
+                    ctx.arc(0, 0, b.radius * 1.5, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(0,0,0,0.01)';
+                    ctx.fill();
+                    ctx.restore();
+                    
+                    ctx.rotate(b.rotation);
                     ctx.drawImage(img, -size / 2, -size / 2, size, size);
                     ctx.restore();
                 } else {
